@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Complaint Tracker — PolicyPoint</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Brand palette matching the Bonus Calculator screenshot */
+  --navy:       #1a2352;
+  --navy-dark:  #131a40;
+  --navy-mid:   #222d63;
+  --gold:       #f5a623;
+  --gold-light: #fbbf47;
+  --bg:         #eef0f5;
+  --surface:    #ffffff;
+  --surface2:   #f4f5f9;
+  --border:     #dde1ec;
+  --border2:    #c8cde0;
+  --text:       #1a2352;
+  --text-body:  #2d3561;
+  --muted:      #6b7299;
+  /* Status colors */
+  --founded:    #d93025;
+  --partial:    #e07b00;
+  --unfounded:  #1a7f4b;
+  --coaching:   #6334c4;
+  --shadow-sm:  0 1px 3px rgba(26,35,82,.08), 0 1px 2px rgba(26,35,82,.05);
+  --shadow:     0 4px 16px rgba(26,35,82,.1), 0 1px 4px rgba(26,35,82,.06);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text-body);
+  min-height: 100vh;
+  font-size: 14px;
+}
+
+/* ===== HEADER ===== */
+.header {
+  background: var(--navy);
+  padding: 0 28px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(0,0,0,.18);
+}
+.header-logo {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -.01em;
+}
+.header-logo span { color: var(--gold); }
+.header-divider { width: 1px; height: 22px; background: rgba(255,255,255,.18); }
+.header-sub { font-size: 13px; color: rgba(255,255,255,.6); font-weight: 400; }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.live-pill {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: rgba(255,255,255,.7);
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.15);
+  padding: 4px 12px; border-radius: 20px;
+  font-family: 'DM Mono', monospace;
+}
+.live-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #4ade80; box-shadow: 0 0 6px #4ade80;
+  animation: blink 2.5s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ===== LAYOUT ===== */
+.layout {
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  min-height: calc(100vh - 58px);
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 20px;
+  overflow-y: auto;
+}
+.sidebar-section {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.sidebar-section:first-child { border-top: none; padding-top: 0; }
+
+.sidebar-label {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .1em;
+  color: var(--navy); margin-bottom: 12px;
+}
+.filter-label {
+  font-size: 11px; font-weight: 500;
+  color: var(--muted); margin-bottom: 5px;
+}
+.filter-group { margin-bottom: 12px; }
+.filter-group:last-child { margin-bottom: 0; }
+
+.filter-group select,
+.filter-group input[type="date"] {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-body);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.filter-group select:focus,
+.filter-group input[type="date"]:focus {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px rgba(26,35,82,.1);
+}
+
+.date-presets {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  margin-bottom: 8px;
+}
+.preset-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 7px 4px; border-radius: 6px;
+  font-size: 11.5px; font-weight: 500;
+  cursor: pointer; text-align: center;
+  font-family: 'Inter', sans-serif;
+  transition: all .15s; line-height: 1.2;
+}
+.preset-btn:hover { border-color: var(--navy); color: var(--navy); background: #eef0f5; }
+.preset-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+
+.custom-dates { display: none; flex-direction: column; gap: 5px; margin-top: 4px; }
+.custom-dates.active { display: flex; }
+
+.reset-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 9px; border-radius: 6px;
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: all .15s;
+}
+.reset-btn:hover { border-color: var(--navy); color: var(--navy); background: #eef0f5; }
+
+/* ===== MAIN ===== */
+.main {
+  padding: 24px 28px;
+  display: flex; flex-direction: column; gap: 22px;
+}
+
+/* ===== KPI STRIP ===== */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+/* Gold accent bar on total card */
+.kpi-card.total {
+  background: var(--navy);
+  border-color: var(--navy-dark);
+}
+.kpi-card.total .kpi-label { color: rgba(255,255,255,.6); }
+.kpi-card.total .kpi-value { color: var(--gold); }
+.kpi-card.total .kpi-sub { color: rgba(255,255,255,.45); }
+
+.kpi-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0; height: 3px;
+}
+.kpi-card.total::after  { background: var(--gold); }
+.kpi-card.founded::after { background: var(--founded); }
+.kpi-card.partial::after { background: var(--partial); }
+.kpi-card.unfounded::after { background: var(--unfounded); }
+.kpi-card.coaching::after { background: var(--coaching); }
+
+.kpi-label {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .09em;
+  color: var(--muted); margin-bottom: 6px;
+}
+.kpi-value {
+  font-size: 34px; font-weight: 700; line-height: 1;
+  letter-spacing: -.02em; color: var(--navy);
+  font-family: 'DM Mono', monospace;
+  margin-bottom: 4px;
+}
+.kpi-sub { font-size: 11.5px; color: var(--muted); }
+.kpi-card.founded .kpi-value  { color: var(--founded); }
+.kpi-card.partial .kpi-value  { color: var(--partial); }
+.kpi-card.unfounded .kpi-value { color: var(--unfounded); }
+.kpi-card.coaching .kpi-value { color: var(--coaching); }
+
+/* ===== CHARTS ===== */
+.charts-row {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+}
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 18px 14px;
+  box-shadow: var(--shadow-sm);
+}
+.chart-title {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .09em;
+  color: var(--muted); margin-bottom: 14px;
+}
+.chart-wrap { position: relative; height: 190px; }
+
+/* ===== TABLE CARDS ===== */
+.table-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.table-toolbar {
+  background: var(--navy);
+  padding: 12px 18px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.section-label {
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .09em;
+  color: rgba(255,255,255,.85);
+}
+.section-count {
+  font-size: 11.5px;
+  font-family: 'DM Mono', monospace;
+  color: var(--gold);
+  background: rgba(245,166,35,.15);
+  border: 1px solid rgba(245,166,35,.3);
+  padding: 2px 9px; border-radius: 20px;
+}
+.table-search {
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.2);
+  color: #fff;
+  padding: 6px 12px; border-radius: 6px;
+  font-size: 13px; font-family: 'Inter', sans-serif;
+  outline: none; width: 200px;
+  transition: border-color .15s, background .15s;
+}
+.table-search::placeholder { color: rgba(255,255,255,.4); }
+.table-search:focus {
+  border-color: var(--gold);
+  background: rgba(255,255,255,.15);
+}
+
+.table-wrap, .detail-scroll { overflow-x: auto; }
+.detail-scroll { max-height: 340px; overflow-y: auto; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  background: var(--surface2);
+  padding: 9px 16px;
+  text-align: left;
+  font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap; cursor: pointer; user-select: none;
+  transition: color .12s;
+}
+thead th:hover { color: var(--navy); }
+thead th.sorted { color: var(--navy); }
+thead th .sort-icon { margin-left: 3px; font-size: 10px; opacity: .5; }
+thead th.sorted .sort-icon { opacity: 1; }
+
+.detail-scroll table thead th {
+  position: sticky; top: 0; z-index: 2;
+}
+
+tbody td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle; color: var(--text-body);
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: #f7f8fc; }
+
+.agent-name { font-weight: 600; color: var(--navy); font-size: 13px; }
+.mgr-name { font-size: 11.5px; color: var(--muted); }
+.mono { font-family: 'DM Mono', monospace; }
+.num-center { text-align: center; font-family: 'DM Mono', monospace; font-weight: 500; }
+
+.mini-bar-bg {
+  width: 72px; height: 4px;
+  background: var(--border); border-radius: 2px;
+  margin-top: 4px; overflow: hidden;
+}
+.mini-bar-fill {
+  height: 100%; border-radius: 2px;
+  background: var(--navy); transition: width .3s;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 3px 9px; border-radius: 4px;
+  font-size: 11px; font-weight: 600;
+  white-space: nowrap; border: 1px solid transparent;
+}
+.badge-f  { background: #fef2f2; color: var(--founded);  border-color: #fecaca; }
+.badge-p  { background: #fff7ed; color: var(--partial);  border-color: #fed7aa; }
+.badge-u  { background: #f0fdf4; color: var(--unfounded); border-color: #bbf7d0; }
+.badge-c  { background: #faf5ff; color: var(--coaching); border-color: #e9d5ff; }
+
+/* Quick filter buttons */
+.quick-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.qf-btn {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.2);
+  color: rgba(255,255,255,.7);
+  padding: 4px 12px; border-radius: 20px;
+  font-size: 11.5px; font-weight: 500;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: all .15s;
+}
+.qf-btn:hover { background: rgba(255,255,255,.2); color: #fff; }
+.qf-btn.active { background: rgba(255,255,255,.9); color: var(--navy); border-color: transparent; font-weight: 600; }
+.qf-btn.active.f { background: var(--founded); color: #fff; }
+.qf-btn.active.p { background: var(--partial); color: #fff; }
+.qf-btn.active.u { background: var(--unfounded); color: #fff; }
+.qf-btn.active.c { background: var(--coaching); color: #fff; }
+
+.text-trunc {
+  max-width: 240px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  color: var(--muted); font-size: 12px; cursor: default;
+}
+.link-out {
+  color: var(--navy); font-size: 12px;
+  text-decoration: none; font-weight: 600;
+}
+.link-out:hover { color: var(--gold); text-decoration: underline; }
+
+/* Rate colors */
+.rate-high { color: var(--founded); font-weight: 700; }
+.rate-mid  { color: var(--partial); font-weight: 700; }
+.rate-low  { color: var(--unfounded); font-weight: 700; }
+
+/* Pagination */
+.pagination {
+  padding: 10px 18px;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted);
+  background: var(--surface2); flex-wrap: wrap;
+}
+.pg-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-body); padding: 4px 10px;
+  border-radius: 5px; font-size: 12px;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: all .12s;
+}
+.pg-btn:hover:not(:disabled) { border-color: var(--navy); color: var(--navy); }
+.pg-btn:disabled { opacity: .35; cursor: default; }
+.pg-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+
+.empty {
+  padding: 40px; text-align: center;
+  color: var(--muted); font-size: 14px;
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--navy); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-logo">Policy<span>Point</span></div>
+  <div class="header-divider"></div>
+  <div class="header-sub">Complaint Tracker</div>
+  <div class="header-right">
+    <div class="live-pill">
+      <div class="live-dot"></div>
+      <span id="refreshTime">Loading…</span>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Date Filter</div>
+      <div class="filter-group">
+        <div class="filter-label">Date Field</div>
+        <select id="dateFieldSel">
+          <option value="Complaint Date">Complaint Date</option>
+          <option value="Reviewed Date">Reviewed Date</option>
+          <option value="Application Date">Application Date</option>
+        </select>
+      </div>
+      <div class="filter-label" style="margin-bottom:7px">Period</div>
+      <div class="date-presets">
+        <button class="preset-btn" data-range="thisweek">This Week</button>
+        <button class="preset-btn" data-range="thismonth">This Month</button>
+        <button class="preset-btn active" data-range="rolling3">Rolling 3M</button>
+        <button class="preset-btn" data-range="custom">Custom</button>
+      </div>
+      <div class="custom-dates" id="customDates">
+        <input type="date" id="dateFrom">
+        <input type="date" id="dateTo">
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Filters</div>
+      <div class="filter-group">
+        <div class="filter-label">Manager</div>
+        <select id="managerSel"><option value="">All Managers</option></select>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">Agent</div>
+        <select id="agentSel"><option value="">All Agents</option></select>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">Determination</div>
+        <select id="detSel">
+          <option value="">All</option>
+          <option value="Founded">Founded</option>
+          <option value="Partially Founded">Partially Founded</option>
+          <option value="Unfounded">Unfounded</option>
+          <option value="Unfounded, coaching opportunities present">Coaching Opp.</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">Carrier</div>
+        <select id="carrierSel"><option value="">All Carriers</option></select>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">Complaint Source</div>
+        <select id="sourceSel"><option value="">All Sources</option></select>
+      </div>
+    </div>
+
+    <button class="reset-btn" onclick="resetFilters()">↺ &nbsp;Reset Filters</button>
+
+  </div><!-- /sidebar -->
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- KPIs -->
+    <div class="kpi-row">
+      <div class="kpi-card total">
+        <div class="kpi-label">Total Complaints</div>
+        <div class="kpi-value" id="kpiTotal">—</div>
+        <div class="kpi-sub">in selected period</div>
+      </div>
+      <div class="kpi-card founded">
+        <div class="kpi-label">Founded</div>
+        <div class="kpi-value" id="kpiFounded">—</div>
+        <div class="kpi-sub" id="kpiFoundedPct">—</div>
+      </div>
+      <div class="kpi-card partial">
+        <div class="kpi-label">Partially Founded</div>
+        <div class="kpi-value" id="kpiPartial">—</div>
+        <div class="kpi-sub" id="kpiPartialPct">—</div>
+      </div>
+      <div class="kpi-card unfounded">
+        <div class="kpi-label">Unfounded</div>
+        <div class="kpi-value" id="kpiUnfounded">—</div>
+        <div class="kpi-sub" id="kpiUnfoundedPct">—</div>
+      </div>
+      <div class="kpi-card coaching">
+        <div class="kpi-label">Coaching Opp.</div>
+        <div class="kpi-value" id="kpiCoaching">—</div>
+        <div class="kpi-sub" id="kpiCoachingPct">—</div>
+      </div>
+    </div>
+
+    <!-- CHARTS -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Allegation Topic</div>
+        <div class="chart-wrap"><canvas id="chartAllegation"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Area of Improvement (AOI)</div>
+        <div class="chart-wrap"><canvas id="chartAOI"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Carrier</div>
+        <div class="chart-wrap"><canvas id="chartCarrier"></canvas></div>
+      </div>
+    </div>
+
+    <!-- AGENT TABLE -->
+    <div class="table-card">
+      <div class="table-toolbar">
+        <div class="section-label">Agent Summary</div>
+        <span class="section-count" id="agentCount">—</span>
+        <input class="table-search" type="text" id="agentSearch" placeholder="Search agent or manager…">
+      </div>
+      <div class="table-wrap">
+        <table id="agentTable">
+          <thead>
+            <tr>
+              <th onclick="sortAgent('agent')">Agent <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('manager')">Manager <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('total')" class="sorted">Total <span class="sort-icon">↓</span></th>
+              <th onclick="sortAgent('founded')">Founded <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('partial')">Partial <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('unfounded')">Unfounded <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('coaching')">Coaching <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('rate')">Founded Rate <span class="sort-icon">↕</span></th>
+            </tr>
+          </thead>
+          <tbody id="agentTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- DETAIL TABLE -->
+    <div class="table-card">
+      <div class="table-toolbar">
+        <div class="section-label">Complaint Detail</div>
+        <span class="section-count" id="detailCount">—</span>
+        <input class="table-search" type="text" id="detailSearch" placeholder="Search complaints…">
+        <div class="quick-filters">
+          <button class="qf-btn active" onclick="qfFilter('')">All</button>
+          <button class="qf-btn f" onclick="qfFilter('Founded')">Founded</button>
+          <button class="qf-btn p" onclick="qfFilter('Partially Founded')">Partial</button>
+          <button class="qf-btn u" onclick="qfFilter('Unfounded')">Unfounded</button>
+          <button class="qf-btn c" onclick="qfFilter('Unfounded, coaching opportunities present')">Coaching</button>
+        </div>
+      </div>
+      <div class="detail-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Manager</th>
+              <th>Complaint Date</th>
+              <th>Reviewed Date</th>
+              <th>Carrier</th>
+              <th>Determination</th>
+              <th>Source</th>
+              <th>Allegation Topic</th>
+              <th>Summary</th>
+            </tr>
+          </thead>
+          <tbody id="detailTbody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="detailPag"></div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+// ---- DATA ----
+const RAW = %%COMPLAINT_DATA%%;
+
+// ---- STATE ----
+let filtered=[...RAW];
+let agentSortKey='total',agentSortDir=-1;
+let detailPage=1,detailDetFilter='';
+const PAGE_SIZE=15;
+const TODAY=new Date();
+let activeDateRange='rolling3';
+
+// ---- HELPERS ----
+function parseDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d;}
+function fmtDate(s){if(!s)return '—';const d=parseDate(s);return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';}
+function parseTopics(str){
+  if(!str)return[];
+  try{const a=JSON.parse(str);if(Array.isArray(a))return a;}catch(e){}
+  return str.split('\n').map(s=>s.replace(/^[•\[\]"]/g,'').replace(/["\]]/g,'').trim()).filter(Boolean);
+}
+function detClass(d){
+  if(!d)return'';const l=d.toLowerCase();
+  if(l==='founded')return'badge-f';
+  if(l.includes('partially'))return'badge-p';
+  if(l.includes('coaching'))return'badge-c';
+  if(l.includes('unfounded'))return'badge-u';
+  return'';
+}
+function detShort(d){
+  if(!d)return'—';
+  return{'Founded':'Founded','Partially Founded':'Partially Founded','Partial':'Partially Founded','Unfounded':'Unfounded','Unfounded, coaching opportunities present':'Coaching Opp.'}[d]||d;
+}
+
+function populateDropdowns(){
+  [['managerSel','Manager'],['agentSel','Agent'],['carrierSel','Name of Carrier Enrolled'],['sourceSel','Complaint Source']].forEach(([id,field])=>{
+    const sel=document.getElementById(id);
+    [...new Set(RAW.map(r=>r[field]).filter(Boolean))].sort().forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});
+  });
+}
+
+document.querySelectorAll('.preset-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    activeDateRange=btn.dataset.range;
+    document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b===btn));
+    document.getElementById('customDates').classList.toggle('active',activeDateRange==='custom');
+    applyFilters();
+  });
+});
+['dateFrom','dateTo','dateFieldSel','managerSel','agentSel','detSel','carrierSel','sourceSel'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',applyFilters);
+});
+
+function applyFilters(){
+  const field=document.getElementById('dateFieldSel').value;
+  const manager=document.getElementById('managerSel').value;
+  const agent=document.getElementById('agentSel').value;
+  const det=document.getElementById('detSel').value;
+  const carrier=document.getElementById('carrierSel').value;
+  const source=document.getElementById('sourceSel').value;
+  let from=null,to=null;const d=TODAY;
+  if(activeDateRange==='thisweek'){from=new Date(d);from.setDate(d.getDate()-d.getDay());to=new Date(d);}
+  else if(activeDateRange==='thismonth'){from=new Date(d.getFullYear(),d.getMonth(),1);to=new Date(d);}
+  else if(activeDateRange==='rolling3'){from=new Date(d);from.setMonth(from.getMonth()-3);to=new Date(d);}
+  else if(activeDateRange==='custom'){const fv=document.getElementById('dateFrom').value;const tv=document.getElementById('dateTo').value;if(fv)from=new Date(fv);if(tv)to=new Date(tv);}
+  filtered=RAW.filter(r=>{
+    if(from||to){const dt=parseDate(r[field]);if(!dt)return false;if(from&&dt<from)return false;if(to&&dt>to)return false;}
+    if(manager&&r.Manager!==manager)return false;
+    if(agent&&r.Agent!==agent)return false;
+    if(det&&!r.Determination.startsWith(det))return false;
+    if(carrier&&r['Name of Carrier Enrolled']!==carrier)return false;
+    if(source&&r['Complaint Source']!==source)return false;
+    return true;
+  });
+  detailPage=1;renderAll();
+}
+function resetFilters(){
+  ['dateFieldSel','managerSel','agentSel','detSel','carrierSel','sourceSel'].forEach(id=>document.getElementById(id).value='');
+  ['dateFrom','dateTo'].forEach(id=>document.getElementById(id).value='');
+  activeDateRange='rolling3';
+  document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b.dataset.range==='rolling3'));
+  document.getElementById('customDates').classList.remove('active');
+  applyFilters();
+}
+
+function renderAll(){renderKPIs();renderCharts();renderAgentTable();renderDetailTable();}
+
+function renderKPIs(){
+  const total=filtered.length;
+  const founded=filtered.filter(r=>r.Determination==='Founded').length;
+  const partial=filtered.filter(r=>r.Determination==='Partially Founded'||r.Determination==='Partial').length;
+  const unfounded=filtered.filter(r=>r.Determination==='Unfounded').length;
+  const coaching=filtered.filter(r=>r.Determination==='Unfounded, coaching opportunities present').length;
+  const pct=v=>total?Math.round(v/total*100)+'%':'0%';
+  document.getElementById('kpiTotal').textContent=total;
+  document.getElementById('kpiFounded').textContent=founded;
+  document.getElementById('kpiPartial').textContent=partial;
+  document.getElementById('kpiUnfounded').textContent=unfounded;
+  document.getElementById('kpiCoaching').textContent=coaching;
+  document.getElementById('kpiFoundedPct').textContent=pct(founded)+' of total';
+  document.getElementById('kpiPartialPct').textContent=pct(partial)+' of total';
+  document.getElementById('kpiUnfoundedPct').textContent=pct(unfounded)+' of total';
+  document.getElementById('kpiCoachingPct').textContent=pct(coaching)+' of total';
+}
+
+const COLORS=['#1a2352','#f5a623','#d93025','#1a7f4b','#6334c4','#0891b2','#e07b00','#be185d','#15803d','#b91c1c'];
+let charts={};
+function countTopics(data,key){const c={};data.forEach(r=>{parseTopics(r[key]).forEach(t=>{c[t]=(c[t]||0)+1;});});return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,8);}
+function buildChart(id,entries){
+  const ctx=document.getElementById(id).getContext('2d');
+  if(charts[id])charts[id].destroy();
+  charts[id]=new Chart(ctx,{
+    type:'bar',
+    data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:COLORS.map(c=>c+'25'),borderColor:COLORS,borderWidth:1.5,borderRadius:4}]},
+    options:{
+      indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.x}`}}},
+      scales:{
+        x:{grid:{color:'rgba(26,35,82,.06)'},ticks:{color:'#6b7299',font:{size:11,family:'Inter'}}},
+        y:{grid:{display:false},ticks:{color:'#1a2352',font:{size:11,family:'Inter',weight:'500'}}}
+      }
+    }
+  });
+}
+function renderCharts(){
+  buildChart('chartAllegation',countTopics(filtered,'Allegation Topic'));
+  buildChart('chartAOI',countTopics(filtered,'AOIs'));
+  const cc={};filtered.forEach(r=>{const c=r['Name of Carrier Enrolled'];if(c)cc[c]=(cc[c]||0)+1;});
+  buildChart('chartCarrier',Object.entries(cc).sort((a,b)=>b[1]-a[1]));
+}
+
+function getAgentStats(){
+  const map={};
+  filtered.forEach(r=>{
+    const k=r.Agent+'|'+r.Manager;
+    if(!map[k])map[k]={agent:r.Agent,manager:r.Manager,total:0,founded:0,partial:0,unfounded:0,coaching:0};
+    map[k].total++;
+    const d=r.Determination;
+    if(d==='Founded')map[k].founded++;
+    else if(d==='Partially Founded'||d==='Partial')map[k].partial++;
+    else if(d==='Unfounded')map[k].unfounded++;
+    else if(d==='Unfounded, coaching opportunities present')map[k].coaching++;
+  });
+  return Object.values(map);
+}
+function sortAgent(key){if(agentSortKey===key)agentSortDir*=-1;else{agentSortKey=key;agentSortDir=-1;}renderAgentTable();}
+function renderAgentTable(){
+  const search=document.getElementById('agentSearch').value.toLowerCase();
+  let stats=getAgentStats().filter(s=>!search||s.agent.toLowerCase().includes(search)||s.manager.toLowerCase().includes(search));
+  stats.sort((a,b)=>{
+    let va=agentSortKey==='agent'?a.agent:agentSortKey==='manager'?a.manager:agentSortKey==='rate'?(a.founded/a.total||0):a[agentSortKey];
+    let vb=agentSortKey==='agent'?b.agent:agentSortKey==='manager'?b.manager:agentSortKey==='rate'?(b.founded/b.total||0):b[agentSortKey];
+    return(typeof va==='string'?va.localeCompare(vb):va-vb)*agentSortDir;
+  });
+  const maxT=Math.max(...stats.map(s=>s.total),1);
+  document.getElementById('agentCount').textContent=stats.length+' agents';
+  document.querySelectorAll('#agentTable th').forEach((th,i)=>{
+    const keys=['agent','manager','total','founded','partial','unfounded','coaching','rate'];
+    th.classList.toggle('sorted',keys[i]===agentSortKey);
+    th.querySelector('.sort-icon').textContent=keys[i]===agentSortKey?(agentSortDir>0?'↑':'↓'):'↕';
+  });
+  const tbody=document.getElementById('agentTbody');
+  if(!stats.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No data for selected filters</td></tr>';return;}
+  tbody.innerHTML=stats.map(s=>{
+    const rate=s.total?Math.round(s.founded/s.total*100):0;
+    const rc=rate>=50?'rate-high':rate>=20?'rate-mid':'rate-low';
+    return`<tr>
+      <td><div class="agent-name">${s.agent}</div></td>
+      <td><div class="mgr-name">${s.manager}</div></td>
+      <td class="num-center">${s.total}<div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${Math.round(s.total/maxT*100)}%"></div></div></td>
+      <td class="num-center" style="color:var(--founded)">${s.founded}</td>
+      <td class="num-center" style="color:var(--partial)">${s.partial}</td>
+      <td class="num-center" style="color:var(--unfounded)">${s.unfounded}</td>
+      <td class="num-center" style="color:var(--coaching)">${s.coaching}</td>
+      <td><span class="${rc} mono">${rate}%</span></td>
+    </tr>`;
+  }).join('');
+}
+document.getElementById('agentSearch').addEventListener('input',renderAgentTable);
+
+function qfFilter(v){
+  detailDetFilter=v;detailPage=1;
+  document.querySelectorAll('.qf-btn').forEach(b=>{
+    const isAll=b.textContent.trim()==='All';
+    const match=v?b.classList.contains(v==='Founded'?'f':v==='Partially Founded'?'p':v==='Unfounded'?'u':'c'):isAll;
+    b.classList.toggle('active',match||(isAll&&!v));
+  });
+  renderDetailTable();
+}
+function renderDetailTable(){
+  const search=document.getElementById('detailSearch').value.toLowerCase();
+  let data=filtered.filter(r=>{
+    if(detailDetFilter&&r.Determination!==detailDetFilter)return false;
+    if(search){const h=[r.Agent,r.Manager,r['Name of Carrier Enrolled'],r['Allegation Topic']].join(' ').toLowerCase();if(!h.includes(search))return false;}
+    return true;
+  });
+  document.getElementById('detailCount').textContent=data.length+' records';
+  const pages=Math.max(1,Math.ceil(data.length/PAGE_SIZE));
+  if(detailPage>pages)detailPage=pages;
+  const slice=data.slice((detailPage-1)*PAGE_SIZE,detailPage*PAGE_SIZE);
+  const tbody=document.getElementById('detailTbody');
+  if(!slice.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No complaints match current filters</td></tr>';}
+  else{
+    tbody.innerHTML=slice.map(r=>{
+      const topics=parseTopics(r['Allegation Topic']).join(', ')||'—';
+      const sl=r['Summary Link'];
+      const slCell=sl&&sl.startsWith('http')
+        ?`<a class="link-out" href="${sl}" target="_blank">↗ View</a>`
+        :sl?`<span style="font-size:11px;color:var(--muted)" title="${sl}">${sl.length>30?sl.slice(0,28)+'…':sl}</span>`:'—';
+      return`<tr>
+        <td><div class="agent-name">${r.Agent}</div></td>
+        <td><div class="mgr-name">${r.Manager}</div></td>
+        <td class="mono" style="font-size:12px">${fmtDate(r['Complaint Date'])}</td>
+        <td class="mono" style="font-size:12px">${fmtDate(r['Reviewed Date'])}</td>
+        <td style="font-size:12px">${r['Name of Carrier Enrolled']||'—'}</td>
+        <td><span class="badge ${detClass(r.Determination)}">${detShort(r.Determination)}</span></td>
+        <td style="font-size:12px;color:var(--muted)">${r['Complaint Source']||'—'}</td>
+        <td><div class="text-trunc" title="${topics}">${topics}</div></td>
+        <td>${slCell}</td>
+      </tr>`;
+    }).join('');
+  }
+  const pag=document.getElementById('detailPag');
+  if(pages<=1){pag.innerHTML=`<span>Showing all ${data.length} records</span>`;return;}
+  let h=`<span style="margin-right:4px">${data.length} records &nbsp;·&nbsp; Page ${detailPage} of ${pages}</span>`;
+  h+=`<button class="pg-btn" onclick="goPage(${detailPage-1})" ${detailPage===1?'disabled':''}>‹</button>`;
+  for(let i=1;i<=pages;i++){
+    if(i===1||i===pages||Math.abs(i-detailPage)<=1)h+=`<button class="pg-btn${i===detailPage?' active':''}" onclick="goPage(${i})">${i}</button>`;
+    else if(Math.abs(i-detailPage)===2)h+='<span style="padding:0 2px;color:var(--muted)">…</span>';
+  }
+  h+=`<button class="pg-btn" onclick="goPage(${detailPage+1})" ${detailPage===pages?'disabled':''}>›</button>`;
+  pag.innerHTML=h;
+}
+function goPage(p){detailPage=p;renderDetailTable();document.querySelector('.detail-scroll').scrollTop=0;}
+document.getElementById('detailSearch').addEventListener('input',()=>{detailPage=1;renderDetailTable();});
+
+document.getElementById('refreshTime').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+populateDropdowns();
+applyFilters();
+</script>
+</body>
+</html>
