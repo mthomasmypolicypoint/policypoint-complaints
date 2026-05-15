@@ -100,7 +100,7 @@ function exportAgentCSV() {
   const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Founded Rate'];
   const rows = stats.map(s => [
     s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
-    s.total ? Math.round(s.founded/s.total*100)+'%' : '0%'
+    s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
   ]);
   downloadCSV('policypoint-agent-summary.csv', [headers, ...rows]);
 }
@@ -110,7 +110,7 @@ function exportAgentPDF() {
   const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Founded Rate'];
   const rows = stats.map(s => [
     s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
-    s.total ? Math.round(s.founded/s.total*100)+'%' : '0%'
+    s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
   ]);
   printTable('Agent Summary', headers, rows);
 }
@@ -817,7 +817,7 @@ tbody tr:hover td { background: #f7f8fc; }
               <th onclick="sortAgent('partial')">Partial <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('unfounded')">Unfounded <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('coaching')">Coaching <span class="sort-icon">↕</span></th>
-              <th onclick="sortAgent('rate')">Founded Rate <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('rate')">Founded + Partial Rate <span class="sort-icon">↕</span></th>
             </tr>
           </thead>
           <tbody id="agentTbody"></tbody>
@@ -1129,7 +1129,7 @@ function renderAgentTable(){
   const tbody=document.getElementById('agentTbody');
   if(!stats.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No data for selected filters</td></tr>';return;}
   tbody.innerHTML=stats.map(s=>{
-    const rate=s.total?Math.round(s.founded/s.total*100):0;
+    const rate=s.total?Math.round((s.founded+s.partial)/s.total*100):0;
     const rc=rate>=50?'rate-high':rate>=20?'rate-mid':'rate-low';
     return`<tr>
       <td><div class="agent-name">${s.agent}</div></td>
@@ -1299,7 +1299,7 @@ function exportAgentCSV() {
   const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Founded Rate'];
   const rows = stats.map(s => [
     s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
-    s.total ? Math.round(s.founded/s.total*100)+'%' : '0%'
+    s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
   ]);
   downloadCSV('policypoint-agent-summary.csv', [headers, ...rows]);
 }
@@ -1309,7 +1309,7 @@ function exportAgentPDF() {
   const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Founded Rate'];
   const rows = stats.map(s => [
     s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
-    s.total ? Math.round(s.founded/s.total*100)+'%' : '0%'
+    s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
   ]);
   printTable('Agent Summary', headers, rows);
 }
