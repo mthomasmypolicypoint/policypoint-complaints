@@ -4,7 +4,211 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Complaint Tracker — PolicyPoint</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js">
+
+// ========== EXPORT HELPERS ==========
+
+// --- CSV download helper ---
+function downloadCSV(filename, rows) {
+  const csv = rows.map(r =>
+    r.map(cell => {
+      const s = String(cell === null || cell === undefined ? '' : cell);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? '"' + s.replace(/"/g, '""') + '"'
+        : s;
+    }).join(',')
+  ).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// --- PDF print helper ---
+function printTable(title, headers, rows) {
+  const periodEl = document.querySelector('.preset-btn.active');
+  const period = periodEl ? periodEl.textContent.trim() : 'Filtered';
+  const now = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+  const tableRows = rows.map(r =>
+    '<tr>' + r.map(cell => `<td>${cell===null||cell===undefined?'':cell}</td>`).join('') + '</tr>'
+  ).join('');
+
+  const html = `<!DOCTYPE html><html><head><title>${title}</title>
+  <style>
+    body { font-family: Inter, Arial, sans-serif; font-size: 11px; color: #1a2352; margin: 24px; }
+    h2 { font-size: 16px; margin: 0 0 4px; color: #1a2352; }
+    .meta { font-size: 11px; color: #6b7299; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #1a2352; color: #fff; padding: 7px 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+    td { padding: 6px 10px; border-bottom: 1px solid #dde1ec; vertical-align: top; }
+    tr:nth-child(even) td { background: #f4f5f9; }
+    @media print { body { margin: 12px; } }
+  
+/* ===== CHART EXPORT ===== */
+.chart-header {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.chart-header .chart-title { margin-bottom: 0; }
+.chart-export-btns { display: flex; gap: 5px; }
+.chart-export-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 3px 8px; border-radius: 4px;
+  font-size: 10.5px; font-weight: 500;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: all .15s;
+}
+.chart-export-btn:hover { border-color: var(--navy); color: var(--navy); }
+.chart-export-btn.gold-btn { color: var(--partial); border-color: rgba(224,123,0,.3); background: rgba(224,123,0,.05); }
+.chart-export-btn.gold-btn:hover { background: rgba(224,123,0,.12); }
+
+</style></head><body>
+  <h2>PolicyPoint — ${title}</h2>
+  <div class="meta">Period: ${period} &nbsp;·&nbsp; Generated: ${now} &nbsp;·&nbsp; ${rows.length} records</div>
+  <table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+  <tbody>${tableRows}</tbody></table>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 400);
+}
+
+// ---- AGENT SUMMARY EXPORTS ----
+function getAgentExportData() {
+  const search = document.getElementById('agentSearch').value.toLowerCase();
+  let stats = getAgentStats().filter(s =>
+    !search || s.agent.toLowerCase().includes(search) || s.manager.toLowerCase().includes(search)
+  );
+  stats.sort((a,b) => {
+    let va = agentSortKey==='agent'?a.agent:agentSortKey==='manager'?a.manager:agentSortKey==='rate'?(a.founded/a.total||0):a[agentSortKey];
+    let vb = agentSortKey==='agent'?b.agent:agentSortKey==='manager'?b.manager:agentSortKey==='rate'?(b.founded/b.total||0):b[agentSortKey];
+    return(typeof va==='string'?va.localeCompare(vb):va-vb)*agentSortDir;
+  });
+  return stats;
+}
+
+function exportAgentCSV() {
+  const stats = getAgentExportData();
+  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Founded Rate'];
+  const rows = stats.map(s => [
+    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
+    s.total ? Math.round(s.founded/s.total*100)+'%' : '0%'
+  ]);
+  downloadCSV('policypoint-agent-summary.csv', [headers, ...rows]);
+}
+
+function exportAgentPDF() {
+  const stats = getAgentExportData();
+  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Founded Rate'];
+  const rows = stats.map(s => [
+    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
+    s.total ? Math.round(s.founded/s.total*100)+'%' : '0%'
+  ]);
+  printTable('Agent Summary', headers, rows);
+}
+
+// ---- COMPLAINT DETAIL EXPORTS ----
+function getDetailExportData() {
+  const search = document.getElementById('detailSearch').value.toLowerCase();
+  return filtered.filter(r => {
+    if (detailDetFilter && r.Determination !== detailDetFilter) return false;
+    if (search) {
+      const h = [r.Agent, r.Manager, r['Name of Carrier Enrolled'], r['Allegation Topic']].join(' ').toLowerCase();
+      if (!h.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+function exportDetailCSV() {
+  const data = getDetailExportData();
+  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Source','Allegation Topic','AOIs','Summary Link'];
+  const rows = data.map(r => [
+    r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
+    r['Name of Carrier Enrolled'], r.Determination, r['Complaint Source'],
+    parseTopics(r['Allegation Topic']).join('; '),
+    parseTopics(r['AOIs']).join('; '),
+    r['Summary Link']
+  ]);
+  downloadCSV('policypoint-complaints.csv', [headers, ...rows]);
+}
+
+function exportDetailPDF() {
+  const data = getDetailExportData();
+  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Source','Allegation Topic'];
+  const rows = data.map(r => [
+    r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
+    r['Name of Carrier Enrolled'], detShort(r.Determination),
+    r['Complaint Source'],
+    parseTopics(r['Allegation Topic']).join(', ')
+  ]);
+  printTable('Complaint Detail', headers, rows);
+}
+
+
+
+// ========== CHART EXPORTS ==========
+
+function exportChartPNG(canvasId, filename) {
+  const canvas = document.getElementById(canvasId);
+  // Draw on a white background
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = canvas.width;
+  exportCanvas.height = canvas.height;
+  const ctx = exportCanvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+  ctx.drawImage(canvas, 0, 0);
+  const a = document.createElement('a');
+  a.href = exportCanvas.toDataURL('image/png');
+  a.download = 'policypoint-' + filename + '.png';
+  a.click();
+}
+
+function exportChartPDF(canvasId, title) {
+  const canvas = document.getElementById(canvasId);
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = canvas.width;
+  exportCanvas.height = canvas.height;
+  const ctx = exportCanvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+  ctx.drawImage(canvas, 0, 0);
+  const imgData = exportCanvas.toDataURL('image/png');
+
+  const periodEl = document.querySelector('.preset-btn.active');
+  const period = periodEl ? periodEl.textContent.trim() : 'Filtered';
+  const now = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+  const html = `<!DOCTYPE html><html><head><title>${title}</title>
+  <style>
+    body { font-family: Inter, Arial, sans-serif; margin: 32px; color: #1a2352; }
+    h2 { font-size: 16px; margin: 0 0 4px; }
+    .meta { font-size: 11px; color: #6b7299; margin-bottom: 20px; }
+    img { max-width: 100%; border: 1px solid #dde1ec; border-radius: 6px; }
+    @media print { body { margin: 16px; } }
+  </style></head><body>
+  <h2>PolicyPoint — ${title}</h2>
+  <div class="meta">Period: ${period} &nbsp;·&nbsp; Generated: ${now}</div>
+  <img src="${imgData}" />
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 400);
+}
+
+</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
@@ -406,6 +610,45 @@ tbody tr:hover td { background: #f7f8fc; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--navy); }
+
+/* ===== EXPORT BUTTONS ===== */
+.export-btns { display: flex; gap: 6px; margin-left: auto; }
+.export-btn {
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.25);
+  color: rgba(255,255,255,.85);
+  padding: 5px 11px; border-radius: 5px;
+  font-size: 11.5px; font-weight: 500;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: all .15s; white-space: nowrap;
+}
+.export-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
+.export-btn.gold { background: rgba(245,166,35,.2); border-color: rgba(245,166,35,.4); color: var(--gold); }
+.export-btn.gold:hover { background: rgba(245,166,35,.3); }
+
+
+/* ===== CHART EXPORT ===== */
+.chart-header {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.chart-header .chart-title { margin-bottom: 0; }
+.chart-export-btns { display: flex; gap: 5px; }
+.chart-export-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 3px 8px; border-radius: 4px;
+  font-size: 10.5px; font-weight: 500;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: all .15s;
+}
+.chart-export-btn:hover { border-color: var(--navy); color: var(--navy); }
+.chart-export-btn.gold-btn { color: var(--partial); border-color: rgba(224,123,0,.3); background: rgba(224,123,0,.05); }
+.chart-export-btn.gold-btn:hover { background: rgba(224,123,0,.12); }
+
 </style>
 </head>
 <body>
@@ -520,15 +763,33 @@ tbody tr:hover td { background: #f7f8fc; }
     <!-- CHARTS -->
     <div class="charts-row">
       <div class="chart-card">
-        <div class="chart-title">Allegation Topic</div>
+        <div class="chart-header">
+          <div class="chart-title">Allegation Topic</div>
+          <div class="chart-export-btns">
+            <button class="chart-export-btn" onclick="exportChartPNG('chartAllegation','allegation-topic')">↓ PNG</button>
+            <button class="chart-export-btn gold-btn" onclick="exportChartPDF('chartAllegation','Allegation Topic')">↓ PDF</button>
+          </div>
+        </div>
         <div class="chart-wrap"><canvas id="chartAllegation"></canvas></div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Area of Improvement (AOI)</div>
+        <div class="chart-header">
+          <div class="chart-title">Area of Improvement (AOI)</div>
+          <div class="chart-export-btns">
+            <button class="chart-export-btn" onclick="exportChartPNG('chartAOI','aoi')">↓ PNG</button>
+            <button class="chart-export-btn gold-btn" onclick="exportChartPDF('chartAOI','Area of Improvement (AOI)')">↓ PDF</button>
+          </div>
+        </div>
         <div class="chart-wrap"><canvas id="chartAOI"></canvas></div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Carrier</div>
+        <div class="chart-header">
+          <div class="chart-title">Carrier</div>
+          <div class="chart-export-btns">
+            <button class="chart-export-btn" onclick="exportChartPNG('chartCarrier','carrier')">↓ PNG</button>
+            <button class="chart-export-btn gold-btn" onclick="exportChartPDF('chartCarrier','Carrier')">↓ PDF</button>
+          </div>
+        </div>
         <div class="chart-wrap"><canvas id="chartCarrier"></canvas></div>
       </div>
     </div>
@@ -539,6 +800,10 @@ tbody tr:hover td { background: #f7f8fc; }
         <div class="section-label">Agent Summary</div>
         <span class="section-count" id="agentCount">—</span>
         <input class="table-search" type="text" id="agentSearch" placeholder="Search agent or manager…">
+        <div class="export-btns">
+          <button class="export-btn" onclick="exportAgentCSV()">↓ CSV</button>
+          <button class="export-btn gold" onclick="exportAgentPDF()">↓ PDF</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table id="agentTable">
@@ -565,6 +830,10 @@ tbody tr:hover td { background: #f7f8fc; }
         <div class="section-label">Complaint Detail</div>
         <span class="section-count" id="detailCount">—</span>
         <input class="table-search" type="text" id="detailSearch" placeholder="Search complaints…">
+        <div class="export-btns">
+          <button class="export-btn" onclick="exportDetailCSV()">↓ CSV</button>
+          <button class="export-btn gold" onclick="exportDetailPDF()">↓ PDF</button>
+        </div>
         <div class="quick-filters">
           <button class="qf-btn active" onclick="qfFilter('')">All</button>
           <button class="qf-btn f" onclick="qfFilter('Founded')">Founded</button>
@@ -835,6 +1104,210 @@ document.getElementById('detailSearch').addEventListener('input',()=>{detailPage
 document.getElementById('refreshTime').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 populateDropdowns();
 applyFilters();
+
+
+// ========== EXPORT HELPERS ==========
+
+// --- CSV download helper ---
+function downloadCSV(filename, rows) {
+  const csv = rows.map(r =>
+    r.map(cell => {
+      const s = String(cell === null || cell === undefined ? '' : cell);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? '"' + s.replace(/"/g, '""') + '"'
+        : s;
+    }).join(',')
+  ).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// --- PDF print helper ---
+function printTable(title, headers, rows) {
+  const periodEl = document.querySelector('.preset-btn.active');
+  const period = periodEl ? periodEl.textContent.trim() : 'Filtered';
+  const now = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+  const tableRows = rows.map(r =>
+    '<tr>' + r.map(cell => `<td>${cell===null||cell===undefined?'':cell}</td>`).join('') + '</tr>'
+  ).join('');
+
+  const html = `<!DOCTYPE html><html><head><title>${title}</title>
+  <style>
+    body { font-family: Inter, Arial, sans-serif; font-size: 11px; color: #1a2352; margin: 24px; }
+    h2 { font-size: 16px; margin: 0 0 4px; color: #1a2352; }
+    .meta { font-size: 11px; color: #6b7299; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #1a2352; color: #fff; padding: 7px 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+    td { padding: 6px 10px; border-bottom: 1px solid #dde1ec; vertical-align: top; }
+    tr:nth-child(even) td { background: #f4f5f9; }
+    @media print { body { margin: 12px; } }
+  
+/* ===== CHART EXPORT ===== */
+.chart-header {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.chart-header .chart-title { margin-bottom: 0; }
+.chart-export-btns { display: flex; gap: 5px; }
+.chart-export-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 3px 8px; border-radius: 4px;
+  font-size: 10.5px; font-weight: 500;
+  cursor: pointer; font-family: 'Inter', sans-serif;
+  transition: all .15s;
+}
+.chart-export-btn:hover { border-color: var(--navy); color: var(--navy); }
+.chart-export-btn.gold-btn { color: var(--partial); border-color: rgba(224,123,0,.3); background: rgba(224,123,0,.05); }
+.chart-export-btn.gold-btn:hover { background: rgba(224,123,0,.12); }
+
+</style></head><body>
+  <h2>PolicyPoint — ${title}</h2>
+  <div class="meta">Period: ${period} &nbsp;·&nbsp; Generated: ${now} &nbsp;·&nbsp; ${rows.length} records</div>
+  <table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+  <tbody>${tableRows}</tbody></table>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 400);
+}
+
+// ---- AGENT SUMMARY EXPORTS ----
+function getAgentExportData() {
+  const search = document.getElementById('agentSearch').value.toLowerCase();
+  let stats = getAgentStats().filter(s =>
+    !search || s.agent.toLowerCase().includes(search) || s.manager.toLowerCase().includes(search)
+  );
+  stats.sort((a,b) => {
+    let va = agentSortKey==='agent'?a.agent:agentSortKey==='manager'?a.manager:agentSortKey==='rate'?(a.founded/a.total||0):a[agentSortKey];
+    let vb = agentSortKey==='agent'?b.agent:agentSortKey==='manager'?b.manager:agentSortKey==='rate'?(b.founded/b.total||0):b[agentSortKey];
+    return(typeof va==='string'?va.localeCompare(vb):va-vb)*agentSortDir;
+  });
+  return stats;
+}
+
+function exportAgentCSV() {
+  const stats = getAgentExportData();
+  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Founded Rate'];
+  const rows = stats.map(s => [
+    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
+    s.total ? Math.round(s.founded/s.total*100)+'%' : '0%'
+  ]);
+  downloadCSV('policypoint-agent-summary.csv', [headers, ...rows]);
+}
+
+function exportAgentPDF() {
+  const stats = getAgentExportData();
+  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Founded Rate'];
+  const rows = stats.map(s => [
+    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
+    s.total ? Math.round(s.founded/s.total*100)+'%' : '0%'
+  ]);
+  printTable('Agent Summary', headers, rows);
+}
+
+// ---- COMPLAINT DETAIL EXPORTS ----
+function getDetailExportData() {
+  const search = document.getElementById('detailSearch').value.toLowerCase();
+  return filtered.filter(r => {
+    if (detailDetFilter && r.Determination !== detailDetFilter) return false;
+    if (search) {
+      const h = [r.Agent, r.Manager, r['Name of Carrier Enrolled'], r['Allegation Topic']].join(' ').toLowerCase();
+      if (!h.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+function exportDetailCSV() {
+  const data = getDetailExportData();
+  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Source','Allegation Topic','AOIs','Summary Link'];
+  const rows = data.map(r => [
+    r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
+    r['Name of Carrier Enrolled'], r.Determination, r['Complaint Source'],
+    parseTopics(r['Allegation Topic']).join('; '),
+    parseTopics(r['AOIs']).join('; '),
+    r['Summary Link']
+  ]);
+  downloadCSV('policypoint-complaints.csv', [headers, ...rows]);
+}
+
+function exportDetailPDF() {
+  const data = getDetailExportData();
+  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Source','Allegation Topic'];
+  const rows = data.map(r => [
+    r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
+    r['Name of Carrier Enrolled'], detShort(r.Determination),
+    r['Complaint Source'],
+    parseTopics(r['Allegation Topic']).join(', ')
+  ]);
+  printTable('Complaint Detail', headers, rows);
+}
+
+
+
+// ========== CHART EXPORTS ==========
+
+function exportChartPNG(canvasId, filename) {
+  const canvas = document.getElementById(canvasId);
+  // Draw on a white background
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = canvas.width;
+  exportCanvas.height = canvas.height;
+  const ctx = exportCanvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+  ctx.drawImage(canvas, 0, 0);
+  const a = document.createElement('a');
+  a.href = exportCanvas.toDataURL('image/png');
+  a.download = 'policypoint-' + filename + '.png';
+  a.click();
+}
+
+function exportChartPDF(canvasId, title) {
+  const canvas = document.getElementById(canvasId);
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = canvas.width;
+  exportCanvas.height = canvas.height;
+  const ctx = exportCanvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+  ctx.drawImage(canvas, 0, 0);
+  const imgData = exportCanvas.toDataURL('image/png');
+
+  const periodEl = document.querySelector('.preset-btn.active');
+  const period = periodEl ? periodEl.textContent.trim() : 'Filtered';
+  const now = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+  const html = `<!DOCTYPE html><html><head><title>${title}</title>
+  <style>
+    body { font-family: Inter, Arial, sans-serif; margin: 32px; color: #1a2352; }
+    h2 { font-size: 16px; margin: 0 0 4px; }
+    .meta { font-size: 11px; color: #6b7299; margin-bottom: 20px; }
+    img { max-width: 100%; border: 1px solid #dde1ec; border-radius: 6px; }
+    @media print { body { margin: 16px; } }
+  </style></head><body>
+  <h2>PolicyPoint — ${title}</h2>
+  <div class="meta">Period: ${period} &nbsp;·&nbsp; Generated: ${now}</div>
+  <img src="${imgData}" />
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 400);
+}
+
 </script>
 </body>
 </html>
