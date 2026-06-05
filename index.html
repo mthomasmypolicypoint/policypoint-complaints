@@ -11,7 +11,7 @@
 // --- CSV download helper ---
 function downloadCSV(filename, rows) {
   const csv = rows.map(r =>
-    r.map(cell => {
+    r.map(cell => {h
       const s = String(cell === null || cell === undefined ? '' : cell);
       return s.includes(',') || s.includes('"') || s.includes('\n')
         ? '"' + s.replace(/"/g, '""') + '"'
@@ -977,7 +977,8 @@ function fmtDate(s){if(!s)return '—';const d=parseDate(s);return d?d.toLocaleD
 function parseTopics(str){
   if(!str)return[];
   try{const a=JSON.parse(str);if(Array.isArray(a))return a;}catch(e){}
-  return str.split('\n').map(s=>s.replace(/^[•\[\]"]/g,'').replace(/["\]]/g,'').trim()).filter(Boolean);
+if(str.indexOf('\n')!==-1)return str.split('\n').map(s=>s.replace(/^[\u2022\[\]"\s]+/g,'').replace(/[\[\]"\s]+$/g,'').trim()).filter(Boolean);
+    return str.split(',').map(s=>s.replace(/^[\u2022\[\]"]+/g,'').replace(/[\[\]"]+$/g,'').trim()).filter(Boolean);
 }
 function detClass(d){
   if(!d)return'';const l=d.toLowerCase();
