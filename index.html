@@ -379,7 +379,8 @@ body {
 /* ===== KPI STRIP ===== */
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+
   gap: 12px;
 }
 .kpi-card {
@@ -410,6 +411,8 @@ body {
 .kpi-card.partial::after { background: var(--partial); }
 .kpi-card.unfounded::after { background: var(--unfounded); }
 .kpi-card.coaching::after { background: var(--coaching); }
+.kpi-card.submissions::after { background: #0891b2; }
+.kpi-card.pctcard::after { background: #6334c4; }
 
 .kpi-label {
   font-size: 10px; font-weight: 700;
@@ -759,6 +762,16 @@ tbody tr:hover td { background: #f7f8fc; }
         <div class="kpi-value" id="kpiCoaching">—</div>
         <div class="kpi-sub" id="kpiCoachingPct">—</div>
       </div>
+      <div class="kpi-card submissions">
+        <div class="kpi-label">Total Submissions</div>
+        <div class="kpi-value" id="">—</div>
+        <div class="kpi-sub" id="Sub">—</div>
+      </div>
+      <div class="kpi-card pctcard">
+        <div class="kpi-label">Complaint Percentage</div>
+        <div class="kpi-value" id="kpiPct">—</div>
+        <div class="kpi-sub" id="kpiPctSub">—</div>
+      </div>
     </div>
 
     <!-- CHARTS -->
@@ -818,6 +831,8 @@ tbody tr:hover td { background: #f7f8fc; }
               <th onclick="sortAgent('unfounded')">Unfounded <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('coaching')">Coaching <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('rate')">Founded + Partial Rate <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('submissions')">Submissions <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('pct')">Complaint % <span class="sort-icon">↕</span></th>
             </tr>
           </thead>
           <tbody id="agentTbody"></tbody>
@@ -871,6 +886,32 @@ tbody tr:hover td { background: #f7f8fc; }
 // ---- DATA ----
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT_RA1ZAz2BNKxREcnJw8FBgU72-qzzwu7WcsFPMP6MGV-K6yyjmQkUsOVGCjm6wmcGa4uyJJjbJmvT/pub?output=csv';
 let RAW = [];
+const SUBMISSIONS_URL = 'https://docs.google.com/spreadsheets/d/1LlxjOsN25cpjlOX5vfa1o_qSh6_XqzB-ZvRzxFXADdE/gviz/tq?tqx=out:csv&gid=1426768133';
+let SUBMISSIONS_RAW = [];
+
+function normalizeAgentName(name){
+  if(!name) return '';
+  name = String(name).trim();
+  const idx = name.indexOf(',');
+  if(idx !== -1){
+    const last = name.slice(0, idx).trim();
+    const first = name.slice(idx+1).trim();
+    return (first + ' ' + last).replace(/\s+/g,' ').trim();
+  }
+  return name;
+}
+function normalizeCarrierName(c){
+  return String(c||'').replace(/\s+/g,'').toLowerCase();
+}
+function parseSubmissionsCSV(text){
+  const rows = parseCSV(text);
+  if (rows.length < 2) return [];
+  return rows.slice(1).map(r => ({
+    Agent: normalizeAgentName(r[0] || ''),
+    Date: (r[1]||'').trim(),
+    Carrier: (r[2]||'').trim()
+  })).filter(r => r.Agent);
+}
 
 // ---- CSV PARSER ----
 function parseCSV(text) {
@@ -955,6 +996,16 @@ async function loadData() {
     const text = await res.text();
     RAW = csvToRecords(text);
     if (RAW.length === 0) throw new Error('No data found');
+    try {
+      const res2 = await fetch(SUBMISSIONS_URL + '&t=' + Date.now());
+      if (res2.ok) {
+        const text2 = await res2.text();
+        SUBMISSIONS_RAW = parseSubmissionsCSV(text2);
+      }
+    } catch(e2) {
+      console.error('Submissions load error:', e2);
+      SUBMISSIONS_RAW = [];
+    }
     document.getElementById('refreshTime').textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     applyFilters();
   } catch(e) {
@@ -965,6 +1016,7 @@ async function loadData() {
 
 // ---- STATE ----
 let filtered=[...RAW];
+let filteredSubmissions = null;
 let agentSortKey='total',agentSortDir=-1;
 let detailPage=1,detailDetFilter='';
 const PAGE_SIZE=15;
@@ -1040,6 +1092,21 @@ function applyFilters(){
     if(source&&r['Complaint Source']!==source)return false;
     return true;
   });
+    if (field === 'Application Date') {
+    filteredSubmissions = SUBMISSIONS_RAW.filter(r => {
+      if (from || to) {
+        const dt = parseDate(r.Date);
+        if (!dt) return false;
+        if (from && dt < from) return false;
+        if (to && dt > to) return false;
+      }
+      if (agent && r.Agent !== agent) return false;
+      if (carrier && normalizeCarrierName(r.Carrier) !== normalizeCarrierName(carrier)) return false;
+      return true;
+    });
+  } else {
+    filteredSubmissions = null;
+  }
   detailPage=1;renderAll();
 }
 function resetFilters(){
@@ -1069,6 +1136,17 @@ function renderKPIs(){
   document.getElementById('kpiPartialPct').textContent=pct(partial)+' of total';
   document.getElementById('kpiUnfoundedPct').textContent=pct(unfounded)+' of total';
   document.getElementById('kpiCoachingPct').textContent=pct(coaching)+' of total';
+  const subsApplicable = filteredSubmissions !== null && filteredSubmissions !== undefined;
+  const totalSubs = subsApplicable ? filteredSubmissions.length : null;
+  const kSub = document.getElementById('kpiSubmissions');
+  const kSubSub = document.getElementById('kpiSubmissionsSub');
+  if (kSub) kSub.textContent = subsApplicable ? totalSubs : '—';
+  if (kSubSub) kSubSub.textContent = subsApplicable ? 'in selected period' : 'N/A for this date filter';
+  const complaintPct = (subsApplicable && totalSubs) ? (total/totalSubs*100) : null;
+  const kPct = document.getElementById('kpiPct');
+  const kPctSub = document.getElementById('kpiPctSub');
+  if (kPct) kPct.textContent = complaintPct!==null ? complaintPct.toFixed(1)+'%' : '—';
+  if (kPctSub) kPctSub.textContent = complaintPct!==null ? (total+' of '+totalSubs+' submissions') : 'N/A for this date filter';
 }
 
 const COLORS=['#1a2352','#f5a623','#d93025','#1a7f4b','#6334c4','#0891b2','#e07b00','#be185d','#15803d','#b91c1c'];
@@ -1109,7 +1187,17 @@ function getAgentStats(){
     else if(d==='Unfounded')map[k].unfounded++;
     else if(d==='Unfounded, coaching opportunities present')map[k].coaching++;
   });
-  return Object.values(map);
+  const stats = Object.values(map);
+  stats.forEach(s=>{
+    if(filteredSubmissions){
+      s.submissions = filteredSubmissions.filter(sub=>sub.Agent===s.agent).length;
+      s.pct = s.submissions ? (s.total/s.submissions*100) : null;
+    } else {
+      s.submissions = null;
+      s.pct = null;
+    }
+  });
+  return stats;
 }
 function sortAgent(key){if(agentSortKey===key)agentSortDir*=-1;else{agentSortKey=key;agentSortDir=-1;}renderAgentTable();}
 function renderAgentTable(){
@@ -1123,15 +1211,17 @@ function renderAgentTable(){
   const maxT=Math.max(...stats.map(s=>s.total),1);
   document.getElementById('agentCount').textContent=stats.length+' agents';
   document.querySelectorAll('#agentTable th').forEach((th,i)=>{
-    const keys=['agent','manager','total','founded','partial','unfounded','coaching','rate'];
+    const keys=['agent','manager','total','founded','partial','unfounded','coaching','rate','submissions','pct'];
     th.classList.toggle('sorted',keys[i]===agentSortKey);
     th.querySelector('.sort-icon').textContent=keys[i]===agentSortKey?(agentSortDir>0?'↑':'↓'):'↕';
   });
   const tbody=document.getElementById('agentTbody');
-  if(!stats.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No data for selected filters</td></tr>';return;}
+  if(!stats.length){tbody.innerHTML='<tr><td colspan="10" class="empty">No data for selected filters</td></tr>';return;}
   tbody.innerHTML=stats.map(s=>{
     const rate=s.total?Math.round((s.founded+s.partial)/s.total*100):0;
     const rc=rate>=50?'rate-high':rate>=20?'rate-mid':'rate-low';
+    const subsDisplay = (s.submissions===null||s.submissions===undefined) ? '—' : s.submissions;
+    const pctDisplay = (s.pct===null||s.pct===undefined) ? '—' : s.pct.toFixed(1)+'%';
     return`<tr>
       <td><div class="agent-name">${s.agent}</div></td>
       <td><div class="mgr-name">${s.manager}</div></td>
@@ -1141,6 +1231,8 @@ function renderAgentTable(){
       <td class="num-center" style="color:var(--unfounded)">${s.unfounded}</td>
       <td class="num-center" style="color:var(--coaching)">${s.coaching}</td>
       <td><span class="${rc} mono">${rate}%</span></td>
+      <td class="num-center">${subsDisplay}</td>
+      <td class="num-center">${pctDisplay}</td>
     </tr>`;
   }).join('');
 }
@@ -1297,20 +1389,24 @@ function getAgentExportData() {
 
 function exportAgentCSV() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Founded Rate'];
+  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Founded Rate','Total Submissions','Complaint %'];
   const rows = stats.map(s => [
     s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
-    s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
+    s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%',
+    (s.submissions===null||s.submissions===undefined) ? '' : s.submissions,
+    (s.pct===null||s.pct===undefined) ? '' : s.pct.toFixed(1)+'%'
   ]);
   downloadCSV('policypoint-agent-summary.csv', [headers, ...rows]);
 }
 
 function exportAgentPDF() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Founded Rate'];
+  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Founded Rate','Submissions','Complaint %'];
   const rows = stats.map(s => [
     s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
-    s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
+    s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%',
+    (s.submissions===null||s.submissions===undefined) ? '—' : s.submissions,
+    (s.pct===null||s.pct===undefined) ? '—' : s.pct.toFixed(1)+'%'
   ]);
   printTable('Agent Summary', headers, rows);
 }
