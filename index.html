@@ -726,6 +726,14 @@ tbody tr:hover td { background: #f7f8fc; }
         <div class="filter-label">Complaint Source</div>
         <select id="sourceSel"><option value="">All Sources</option></select>
       </div>
+      <div class="filter-group">
+        <div class="filter-label">Allegation Topic</div>
+        <select id="topicSel"><option value="">All Topics</option></select>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">Area of Improvement (AOI)</div>
+        <select id="aoiSel"><option value="">All AOIs</option></select>
+      </div>
     </div>
 
     <button class="reset-btn" onclick="resetFilters()">↺ &nbsp;Reset Filters</button>
@@ -741,6 +749,16 @@ tbody tr:hover td { background: #f7f8fc; }
         <div class="kpi-label">Total Complaints</div>
         <div class="kpi-value" id="kpiTotal">—</div>
         <div class="kpi-sub">in selected period</div>
+      </div>
+      <div class="kpi-card submissions total">
+        <div class="kpi-label">Total Submissions</div>
+        <div class="kpi-value" id="kpiSubmissions">—</div>
+        <div class="kpi-sub" id="kpiSubmissionsSub">—</div>
+      </div>
+      <div class="kpi-card pctcard total">
+        <div class="kpi-label">Complaint Percentage</div>
+        <div class="kpi-value" id="kpiPct">—</div>
+        <div class="kpi-sub" id="kpiPctSub">—</div>
       </div>
       <div class="kpi-card founded">
         <div class="kpi-label">Founded</div>
@@ -761,16 +779,6 @@ tbody tr:hover td { background: #f7f8fc; }
         <div class="kpi-label">Coaching Opp.</div>
         <div class="kpi-value" id="kpiCoaching">—</div>
         <div class="kpi-sub" id="kpiCoachingPct">—</div>
-      </div>
-      <div class="kpi-card submissions">
-        <div class="kpi-label">Total Submissions</div>
-        <div class="kpi-value" id="kpiSubmissions">—</div>
-        <div class="kpi-sub" id="kpiSubmissionsSub">—</div>
-      </div>
-      <div class="kpi-card pctcard">
-        <div class="kpi-label">Complaint Percentage</div>
-        <div class="kpi-value" id="kpiPct">—</div>
-        <div class="kpi-sub" id="kpiPctSub">—</div>
       </div>
     </div>
 
@@ -1056,6 +1064,15 @@ function populateDropdowns(){
     // Restore selection if still valid
     if(current) sel.value=current;
   });
+  [['topicSel','Allegation Topic'],['aoiSel','AOIs']].forEach(([id,field])=>{
+    const sel=document.getElementById(id);
+    const current=sel.value;
+    while(sel.options.length>1) sel.remove(1);
+    const set=new Set();
+    RAW.forEach(r=>parseTopics(r[field]).forEach(v=>set.add(v)));
+    [...set].sort().forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});
+    if(current) sel.value=current;
+  });
 }
 
 document.querySelectorAll('.preset-btn').forEach(btn=>{
@@ -1066,7 +1083,7 @@ document.querySelectorAll('.preset-btn').forEach(btn=>{
     applyFilters();
   });
 });
-['dateFrom','dateTo','dateFieldSel','managerSel','agentSel','detSel','carrierSel','sourceSel'].forEach(id=>{
+['dateFrom','dateTo','dateFieldSel','managerSel','agentSel','detSel','carrierSel','sourceSel','topicSel','aoiSel'].forEach(id=>{
   document.getElementById(id).addEventListener('change',applyFilters);
 });
 
@@ -1079,6 +1096,8 @@ function applyFilters(){
   const det=document.getElementById('detSel').value;
   const carrier=document.getElementById('carrierSel').value;
   const source=document.getElementById('sourceSel').value;
+  const topic=document.getElementById('topicSel').value;
+  const aoi=document.getElementById('aoiSel').value;
   let from=null,to=null;const d=TODAY;
   if(activeDateRange==='thisweek'){from=new Date(d);from.setDate(d.getDate()-d.getDay());to=new Date(d);}
   else if(activeDateRange==='thismonth'){from=new Date(d.getFullYear(),d.getMonth(),1);to=new Date(d);}
@@ -1091,6 +1110,8 @@ function applyFilters(){
     if(det&&!r.Determination.startsWith(det))return false;
     if(carrier&&r['Name of Carrier Enrolled']!==carrier)return false;
     if(source&&r['Complaint Source']!==source)return false;
+    if(topic&&!parseTopics(r['Allegation Topic']).includes(topic))return false;
+    if(aoi&&!parseTopics(r['AOIs']).includes(aoi))return false;
     return true;
   });
     if (field === 'Application Date') {
@@ -1112,7 +1133,7 @@ function applyFilters(){
   detailPage=1;renderAll();
 }
 function resetFilters(){
-  ['dateFieldSel','managerSel','agentSel','detSel','carrierSel','sourceSel'].forEach(id=>document.getElementById(id).value='');
+  ['dateFieldSel','managerSel','agentSel','detSel','carrierSel','sourceSel','topicSel','aoiSel'].forEach(id=>document.getElementById(id).value='');
   ['dateFrom','dateTo'].forEach(id=>document.getElementById(id).value='');
   activeDateRange='rolling3';
   document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b.dataset.range==='rolling3'));
@@ -1147,7 +1168,7 @@ function renderKPIs(){
   const complaintPct = (subsApplicable && totalSubs) ? (total/totalSubs*100) : null;
   const kPct = document.getElementById('kpiPct');
   const kPctSub = document.getElementById('kpiPctSub');
-  if (kPct) kPct.textContent = complaintPct!==null ? complaintPct.toFixed(1)+'%' : '—';
+  if (kPct) kPct.textContent = complaintPct!==null ? Math.ceil(complaintPct)+'%' : '—';
   if (kPctSub) kPctSub.textContent = complaintPct!==null ? (total+' of '+totalSubs+' submissions') : 'N/A for this date filter';
 }
 
