@@ -682,7 +682,7 @@ tbody tr:hover td { background: #f7f8fc; }
         <select id="dateFieldSel">
           <option value="Complaint Date">Complaint Date</option>
           <option value="Reviewed Date">Reviewed Date</option>
-          <option value="Application Date">Application Date</option>
+          <option value="Application Date" selected>Application Date</option>
         </select>
       </div>
       <div class="filter-label" style="margin-bottom:7px">Period</div>
@@ -1133,7 +1133,8 @@ function applyFilters(){
   detailPage=1;renderAll();
 }
 function resetFilters(){
-  ['dateFieldSel','managerSel','agentSel','detSel','carrierSel','sourceSel','topicSel','aoiSel'].forEach(id=>document.getElementById(id).value='');
+  ['managerSel','agentSel','detSel','carrierSel','sourceSel','topicSel','aoiSel'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('dateFieldSel').value='Application Date';
   ['dateFrom','dateTo'].forEach(id=>document.getElementById(id).value='');
   activeDateRange='rolling3';
   document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b.dataset.range==='rolling3'));
