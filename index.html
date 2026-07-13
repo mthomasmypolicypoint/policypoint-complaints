@@ -909,7 +909,8 @@ function parseSubmissionsCSV(text){
   return rows.slice(1).map(r => ({
     Agent: normalizeAgentName(r[0] || ''),
     Date: (r[1]||'').trim(),
-    Carrier: (r[2]||'').trim()
+    Carrier: (r[2]||'').trim(),
+    Manager: (r[3]||'').trim()
   })).filter(r => r.Agent);
 }
 
@@ -1100,6 +1101,7 @@ function applyFilters(){
         if (from && dt < from) return false;
         if (to && dt > to) return false;
       }
+      if (manager && r.Manager !== manager) return false;
       if (agent && r.Agent !== agent) return false;
       if (carrier && normalizeCarrierName(r.Carrier) !== normalizeCarrierName(carrier)) return false;
       return true;
