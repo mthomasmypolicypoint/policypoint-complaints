@@ -1133,10 +1133,10 @@ function applyFilters(){
     if(aoi&&!parseTopics(r['AOIs']).includes(aoi))return false;
     return true;
   });
-    if (field === 'Application Date') {
+    if (field === 'Application Date' || field === 'Effective Date') {
     filteredSubmissions = SUBMISSIONS_RAW.filter(r => {
       if (from || to) {
-        const dt = parseDate(r.Date);
+        const dt = field === 'Effective Date' ? parseDate(computeEffectiveDate(r.Date)) : parseDate(r.Date);
         if (!dt) return false;
         if (from && dt < from) return false;
         if (to && dt > to) return false;
