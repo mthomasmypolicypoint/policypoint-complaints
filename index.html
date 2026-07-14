@@ -683,6 +683,7 @@ tbody tr:hover td { background: #f7f8fc; }
           <option value="Complaint Date">Complaint Date</option>
           <option value="Reviewed Date">Reviewed Date</option>
           <option value="Application Date" selected>Application Date</option>
+              <option value="Effective Date">Effective Date</option>
         </select>
       </div>
       <div class="filter-label" style="margin-bottom:7px">Period</div>
@@ -964,6 +965,7 @@ function normalizeRecord(r) {
     'Agent':                    r['Agent Name']              || r['Agent']                    || '',
     'Manager':                  r['Manager Name']            || r['Manager']                  || '',
     'Application Date':         r['Application Date']        || '',
+        'Effective Date':           computeEffectiveDate(r['Application Date'] || ''),
     'Complaint Date':           r['Complaint Date']          || '',
     'Reviewed Date':            r['Reviewed Date']           || '',
     'Complaint Source':         r['Complaint Source']        || '',
@@ -1034,6 +1036,21 @@ let activeDateRange='rolling3';
 
 // ---- HELPERS ----
 function parseDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d;}
+function computeEffectiveDate(dateStr){
+    const d = parseDate(dateStr);
+    if(!d) return '';
+    const month = d.getMonth();
+    const day = d.getDate();
+    if((month===9 && day>=15) || month===10){
+          return '2026-01-01';
+    }
+    const next = new Date(d.getFullYear(), month+1, 1);
+    const yyyy = next.getFullYear();
+    const mm = String(next.getMonth()+1).padStart(2,'0');
+    const dd = String(next.getDate()).padStart(2,'0');
+    return yyyy+'-'+mm+'-'+dd;
+}
+  
 function fmtDate(s){if(!s)return '—';const d=parseDate(s);return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';}
 function parseTopics(str){
   if(!str)return[];
