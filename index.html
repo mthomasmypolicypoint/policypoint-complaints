@@ -1037,8 +1037,8 @@ const TODAY=new Date();
 let activeDateRange='rolling3';
 
 // ---- HELPERS ----
-function parseDate(s){if(!s)return null;const d=new Date(s);return isNaN(d)?null:d;}
-function computeEffectiveDate(dateStr){
+function parseDate(s){if(!s)return null;if(typeof s==='string'){const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(m)return new Date(+m[1],+m[2]-1,+m[3]);}const d=new Date(s);return isNaN(d)?null:d;}
+  function computeEffectiveDate(dateStr){
     const d = parseDate(dateStr);
     if(!d) return '';
     const month = d.getMonth();
