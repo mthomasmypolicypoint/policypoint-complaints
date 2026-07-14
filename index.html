@@ -11,7 +11,7 @@
 // --- CSV download helper ---
 function downloadCSV(filename, rows) {
   const csv = rows.map(r =>
-    r.map(cell => {h
+    r.map(cell => {
       const s = String(cell === null || cell === undefined ? '' : cell);
       return s.includes(',') || s.includes('"') || s.includes('\n')
         ? '"' + s.replace(/"/g, '""') + '"'
