@@ -97,9 +97,9 @@ function getAgentExportData() {
 
 function exportAgentCSV() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Founded Rate'];
+  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Egregious','Founded Rate'];
   const rows = stats.map(s => [
-    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
+    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
     s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
   ]);
   downloadCSV('policypoint-agent-summary.csv', [headers, ...rows]);
@@ -107,9 +107,9 @@ function exportAgentCSV() {
 
 function exportAgentPDF() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Founded Rate'];
+  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Egregious','Founded Rate'];
   const rows = stats.map(s => [
-    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
+    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
     s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
   ]);
   printTable('Agent Summary', headers, rows);
@@ -130,10 +130,10 @@ function getDetailExportData() {
 
 function exportDetailCSV() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Source','Allegation Topic','AOIs','Summary Link'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Severity','Source','Allegation Topic','AOIs','Summary Link'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
-    r['Name of Carrier Enrolled'], r.Determination, r['Complaint Source'],
+    r['Name of Carrier Enrolled'], r.Determination, r.Severity || '', r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join('; '),
     parseTopics(r['AOIs']).join('; '),
     r['Summary Link']
@@ -143,10 +143,11 @@ function exportDetailCSV() {
 
 function exportDetailPDF() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Source','Allegation Topic'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Severity','Source','Allegation Topic'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
     r['Name of Carrier Enrolled'], detShort(r.Determination),
+    r.Severity || '\u2014',
     r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join(', ')
   ]);
@@ -232,6 +233,10 @@ function exportChartPDF(canvasId, title) {
   --partial:    #e07b00;
   --unfounded:  #1a7f4b;
   --coaching:   #6334c4;
+  /* Severity scale (Basic \u2192 Egregious) */
+  --sev-basic:     #0891b2;
+  --sev-interm:    #e07b00;
+  --sev-egregious: #d93025;
   --shadow-sm:  0 1px 3px rgba(26,35,82,.08), 0 1px 2px rgba(26,35,82,.05);
   --shadow:     0 4px 16px rgba(26,35,82,.1), 0 1px 4px rgba(26,35,82,.06);
 }
@@ -473,6 +478,20 @@ body {
 .kpi-card.coaching::after { background: var(--coaching); }
 .kpi-card.submissions::after { background: #0891b2; }
 .kpi-card.pctcard::after { background: #6334c4; }
+.kpi-card.basic::after     { background: var(--sev-basic); }
+.kpi-card.interm::after    { background: var(--sev-interm); }
+.kpi-card.egregious::after { background: var(--sev-egregious); }
+.kpi-card.basic .kpi-value     { color: var(--sev-basic); }
+.kpi-card.interm .kpi-value    { color: var(--sev-interm); }
+.kpi-card.egregious .kpi-value { color: var(--sev-egregious); }
+/* Severity badges in the detail table */
+.sev { display:inline-block; font-size:10px; font-weight:700; padding:3px 9px; border-radius:4px; letter-spacing:.03em; white-space:nowrap; }
+.sev-basic  { background: rgba(8,145,178,.12);  color:#0b6c86; }
+.sev-interm { background: rgba(224,123,0,.14);  color:#a85c00; }
+.sev-egreg  { background: var(--sev-egregious); color:#fff; }
+.sev-none   { background:#eef0f5; color:#9aa0bb; border:1px dashed #c8cde0; }
+.eg-count { font-weight:700; color: var(--sev-egregious); }
+.eg-zero  { color:#c3c7d8; }
 
 .kpi-label {
   font-size: 10px; font-weight: 700;
@@ -852,6 +871,21 @@ tbody tr:hover td { background: #f7f8fc; }
         <div class="kpi-value" id="kpiCoaching">—</div>
         <div class="kpi-sub" id="kpiCoachingPct">—</div>
       </div>
+      <div class="kpi-card basic">
+        <div class="kpi-label">Basic</div>
+        <div class="kpi-value" id="kpiBasic">—</div>
+        <div class="kpi-sub" id="kpiBasicPct">—</div>
+      </div>
+      <div class="kpi-card interm">
+        <div class="kpi-label">Intermediate</div>
+        <div class="kpi-value" id="kpiInterm">—</div>
+        <div class="kpi-sub" id="kpiIntermPct">—</div>
+      </div>
+      <div class="kpi-card egregious">
+        <div class="kpi-label">Egregious</div>
+        <div class="kpi-value" id="kpiEgregious">—</div>
+        <div class="kpi-sub" id="kpiEgregiousPct">—</div>
+      </div>
     </div>
 
     <!-- CHARTS -->
@@ -910,6 +944,7 @@ tbody tr:hover td { background: #f7f8fc; }
               <th onclick="sortAgent('partial')">Partial <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('unfounded')">Unfounded <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('coaching')">Coaching <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('egregious')">Egregious <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('rate')">Founded + Partial Rate <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('submissions')">Submissions <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('pct')">Complaint % <span class="sort-icon">↕</span></th>
@@ -948,6 +983,7 @@ tbody tr:hover td { background: #f7f8fc; }
               <th>Reviewed Date</th>
               <th>Carrier</th>
               <th>Determination</th>
+              <th>Severity</th>
               <th>Source</th>
               <th>Allegation Topic</th>
               <th>Summary</th>
@@ -1043,6 +1079,7 @@ function normalizeRecord(r) {
     'Name of Carrier Enrolled': r['Name of Carrier Enrolled'] || r['Name of Carrier']        || '',
     'Allegation Topic':         r['Allegation Topic']        || '',
     'Determination':            r['Determination']           || '',
+    'Severity':                 r['Severity']                || '',
     'AOIs':                     r['AOIs']                    || '',
     'Summary Link':             r['Summary Link']            || '',
     'AMS Link':                 r['AMS Link']                || '',
@@ -1061,12 +1098,12 @@ function showLoading() {
   document.getElementById('kpiUnfounded').textContent = '…';
   document.getElementById('kpiCoaching').textContent = '…';
   document.getElementById('agentTbody').innerHTML = '<tr><td colspan="8" class="empty">Loading data…</td></tr>';
-  document.getElementById('detailTbody').innerHTML = '<tr><td colspan="9" class="empty">Loading data…</td></tr>';
+  document.getElementById('detailTbody').innerHTML = '<tr><td colspan="10" class="empty">Loading data…</td></tr>';
 }
 
 function showError(msg) {
   document.getElementById('agentTbody').innerHTML = `<tr><td colspan="8" class="empty">${msg}</td></tr>`;
-  document.getElementById('detailTbody').innerHTML = `<tr><td colspan="9" class="empty">${msg}</td></tr>`;
+  document.getElementById('detailTbody').innerHTML = `<tr><td colspan="10" class="empty">${msg}</td></tr>`;
 }
 
 // ---- FETCH DATA ----
@@ -1128,6 +1165,13 @@ function parseTopics(str){
   try{const a=JSON.parse(str);if(Array.isArray(a))return a;}catch(e){}
 if(str.indexOf('\n')!==-1)return str.split('\n').map(s=>s.replace(/^[\u2022\[\]"\s]+/g,'').replace(/[\[\]"\s]+$/g,'').trim()).filter(Boolean);
     return str.split(',').map(s=>s.replace(/^[\u2022\[\]"]+/g,'').replace(/[\[\]"]+$/g,'').trim()).filter(Boolean);
+}
+function sevBadge(v){
+  const s=String(v||'').trim();
+  if(s==='Basic')        return '<span class="sev sev-basic">Basic</span>';
+  if(s==='Intermediate') return '<span class="sev sev-interm">Intermediate</span>';
+  if(s==='Egregious')    return '<span class="sev sev-egreg">Egregious</span>';
+  return '<span class="sev sev-none">Not rated</span>';
 }
 function detClass(d){
   if(!d)return'';const l=d.toLowerCase();
@@ -1248,7 +1292,13 @@ function applyFilters(){
   else if(activeDateRange==='thismonth'){from=new Date(d.getFullYear(),d.getMonth(),1);to=new Date(d);}
     else if(activeDateRange==='prevmonth'){from=new Date(d.getFullYear(),d.getMonth()-1,1);to=new Date(d.getFullYear(),d.getMonth(),0);}  
     else if(activeDateRange==='ytd'){from=new Date(d.getFullYear(),0,1);to=new Date(d);}
-    else if(activeDateRange==='rolling3'){from=new Date(d);from.setMonth(from.getMonth()-3);to=new Date(d);}
+    else if(activeDateRange==='rolling3'){
+      // Last three COMPLETE months, not three months back from today: for 21 Sep 2026
+      // this is 1 Jun through 31 Aug. Partial months made month-over-month
+      // comparisons misleading.
+      from=new Date(d.getFullYear(),d.getMonth()-3,1);
+      to=new Date(d.getFullYear(),d.getMonth(),0,23,59,59);
+    }
     else if(activeDateRange==='custom'){const fv=document.getElementById('dateFrom').value;const tv=document.getElementById('dateTo').value;if(fv)from=new Date(fv);if(tv)to=new Date(tv);}
   filtered=RAW.filter(r=>{
     if(from||to){const dt=parseDate(r[field]);if(!dt)return false;if(from&&dt<from)return false;if(to&&dt>to)return false;}
@@ -1301,7 +1351,16 @@ function renderKPIs(){
   const partial=filtered.filter(r=>r.Determination==='Partially Founded'||r.Determination==='Partial').length;
   const unfounded=filtered.filter(r=>r.Determination==='Unfounded').length;
   const coaching=filtered.filter(r=>r.Determination==='Unfounded, coaching opportunities present').length;
+  // Severity is recorded on the complaint row and is often blank on older records,
+  // so the three counts are shown against the number actually rated rather than
+  // against Total Complaints, which would read as if the rest were zero-severity.
+  const sevOf=r=>String(r.Severity||'').trim();
+  const basic=filtered.filter(r=>sevOf(r)==='Basic').length;
+  const interm=filtered.filter(r=>sevOf(r)==='Intermediate').length;
+  const egregious=filtered.filter(r=>sevOf(r)==='Egregious').length;
+  const rated=basic+interm+egregious;
   const pct=v=>total?Math.round(v/total*100)+'%':'0%';
+  const ratedPct=v=>rated?Math.round(v/rated*100)+'% of rated':'not rated';
   document.getElementById('kpiTotal').textContent=total;
   document.getElementById('kpiFounded').textContent=founded;
   document.getElementById('kpiPartial').textContent=partial;
@@ -1311,6 +1370,12 @@ function renderKPIs(){
   document.getElementById('kpiPartialPct').textContent=pct(partial)+' of total';
   document.getElementById('kpiUnfoundedPct').textContent=pct(unfounded)+' of total';
   document.getElementById('kpiCoachingPct').textContent=pct(coaching)+' of total';
+  document.getElementById('kpiBasic').textContent=basic;
+  document.getElementById('kpiInterm').textContent=interm;
+  document.getElementById('kpiEgregious').textContent=egregious;
+  document.getElementById('kpiBasicPct').textContent=ratedPct(basic);
+  document.getElementById('kpiIntermPct').textContent=ratedPct(interm);
+  document.getElementById('kpiEgregiousPct').textContent=ratedPct(egregious);
   const subsApplicable = filteredSubmissions !== null && filteredSubmissions !== undefined;
   const totalSubs = subsApplicable ? filteredSubmissions.length : null;
   const kSub = document.getElementById('kpiSubmissions');
@@ -1354,13 +1419,14 @@ function getAgentStats(){
   const map={};
   filtered.forEach(r=>{
     const k=r.Agent+'|'+r.Manager;
-    if(!map[k])map[k]={agent:r.Agent,manager:r.Manager,total:0,founded:0,partial:0,unfounded:0,coaching:0};
+    if(!map[k])map[k]={agent:r.Agent,manager:r.Manager,total:0,founded:0,partial:0,unfounded:0,coaching:0,egregious:0};
     map[k].total++;
     const d=r.Determination;
     if(d==='Founded')map[k].founded++;
     else if(d==='Partially Founded'||d==='Partial')map[k].partial++;
     else if(d==='Unfounded')map[k].unfounded++;
     else if(d==='Unfounded, coaching opportunities present')map[k].coaching++;
+    if(String(r.Severity||'').trim()==='Egregious')map[k].egregious++;
   });
   const stats = Object.values(map);
   stats.forEach(s=>{
@@ -1386,12 +1452,12 @@ function renderAgentTable(){
   const maxT=Math.max(...stats.map(s=>s.total),1);
   document.getElementById('agentCount').textContent=stats.length+' agents';
   document.querySelectorAll('#agentTable th').forEach((th,i)=>{
-    const keys=['agent','manager','total','founded','partial','unfounded','coaching','rate','submissions','pct'];
+    const keys=['agent','manager','total','founded','partial','unfounded','coaching','egregious','rate','submissions','pct'];
     th.classList.toggle('sorted',keys[i]===agentSortKey);
     th.querySelector('.sort-icon').textContent=keys[i]===agentSortKey?(agentSortDir>0?'↑':'↓'):'↕';
   });
   const tbody=document.getElementById('agentTbody');
-  if(!stats.length){tbody.innerHTML='<tr><td colspan="10" class="empty">No data for selected filters</td></tr>';return;}
+  if(!stats.length){tbody.innerHTML='<tr><td colspan="11" class="empty">No data for selected filters</td></tr>';return;}
   tbody.innerHTML=stats.map(s=>{
     const rate=s.total?Math.round((s.founded+s.partial)/s.total*100):0;
     const rc=rate>=50?'rate-high':rate>=20?'rate-mid':'rate-low';
@@ -1405,6 +1471,7 @@ function renderAgentTable(){
       <td class="num-center" style="color:var(--partial)">${s.partial}</td>
       <td class="num-center" style="color:var(--unfounded)">${s.unfounded}</td>
       <td class="num-center" style="color:var(--coaching)">${s.coaching}</td>
+      <td class="num-center">${s.egregious?`<span class="eg-count">${s.egregious}</span>`:'<span class="eg-zero">0</span>'}</td>
       <td><span class="${rc} mono">${rate}%</span></td>
       <td class="num-center">${subsDisplay}</td>
       <td class="num-center">${pctDisplay}</td>
@@ -1434,7 +1501,7 @@ function renderDetailTable(){
   if(detailPage>pages)detailPage=pages;
   const slice=data.slice((detailPage-1)*PAGE_SIZE,detailPage*PAGE_SIZE);
   const tbody=document.getElementById('detailTbody');
-  if(!slice.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No complaints match current filters</td></tr>';}
+  if(!slice.length){tbody.innerHTML='<tr><td colspan="10" class="empty">No complaints match current filters</td></tr>';}
   else{
     tbody.innerHTML=slice.map(r=>{
       const topics=parseTopics(r['Allegation Topic']).join(', ')||'—';
@@ -1449,6 +1516,7 @@ function renderDetailTable(){
         <td class="mono" style="font-size:12px">${fmtDate(r['Reviewed Date'])}</td>
         <td style="font-size:12px">${r['Name of Carrier Enrolled']||'—'}</td>
         <td><span class="badge ${detClass(r.Determination)}">${detShort(r.Determination)}</span></td>
+        <td>${sevBadge(r.Severity)}</td>
         <td style="font-size:12px;color:var(--muted)">${r['Complaint Source']||'—'}</td>
         <td><div class="text-trunc" title="${topics}">${topics}</div></td>
         <td>${slCell}</td>
@@ -1564,9 +1632,9 @@ function getAgentExportData() {
 
 function exportAgentCSV() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Founded Rate','Total Submissions','Complaint %'];
+  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Egregious','Founded Rate','Total Submissions','Complaint %'];
   const rows = stats.map(s => [
-    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
+    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
     s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%',
     (s.submissions===null||s.submissions===undefined) ? '' : s.submissions,
     (s.pct===null||s.pct===undefined) ? '' : s.pct.toFixed(1)+'%'
@@ -1576,9 +1644,9 @@ function exportAgentCSV() {
 
 function exportAgentPDF() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Founded Rate','Submissions','Complaint %'];
+  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Egregious','Founded Rate','Submissions','Complaint %'];
   const rows = stats.map(s => [
-    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching,
+    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
     s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%',
     (s.submissions===null||s.submissions===undefined) ? '—' : s.submissions,
     (s.pct===null||s.pct===undefined) ? '—' : s.pct.toFixed(1)+'%'
@@ -1601,10 +1669,10 @@ function getDetailExportData() {
 
 function exportDetailCSV() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Source','Allegation Topic','AOIs','Summary Link'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Severity','Source','Allegation Topic','AOIs','Summary Link'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
-    r['Name of Carrier Enrolled'], r.Determination, r['Complaint Source'],
+    r['Name of Carrier Enrolled'], r.Determination, r.Severity || '', r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join('; '),
     parseTopics(r['AOIs']).join('; '),
     r['Summary Link']
@@ -1614,10 +1682,11 @@ function exportDetailCSV() {
 
 function exportDetailPDF() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Source','Allegation Topic'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Severity','Source','Allegation Topic'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
     r['Name of Carrier Enrolled'], detShort(r.Determination),
+    r.Severity || '\u2014',
     r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join(', ')
   ]);
