@@ -130,10 +130,10 @@ function getDetailExportData() {
 
 function exportDetailCSV() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Severity','Source','Allegation Topic','AOIs','Summary Link'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Severity','Coached','Source','Allegation Topic','AOIs','Summary Link'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
-    r['Name of Carrier Enrolled'], r.Determination, r.Severity || '', r['Complaint Source'],
+    r['Name of Carrier Enrolled'], r.Determination, r.Severity || '', isCoached(r) ? 'Yes' : 'No', r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join('; '),
     parseTopics(r['AOIs']).join('; '),
     r['Summary Link']
@@ -143,11 +143,12 @@ function exportDetailCSV() {
 
 function exportDetailPDF() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Severity','Source','Allegation Topic'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Severity','Coached','Source','Allegation Topic'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
     r['Name of Carrier Enrolled'], detShort(r.Determination),
     r.Severity || '\u2014',
+    isCoached(r) ? 'Yes' : 'No',
     r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join(', ')
   ]);
@@ -492,6 +493,9 @@ body {
 .sev-none   { background:#eef0f5; color:#9aa0bb; border:1px dashed #c8cde0; }
 .eg-count { font-weight:700; color: var(--sev-egregious); }
 .eg-zero  { color:#c3c7d8; }
+/* Coached (sheet column X, "Coached (Y/N)"; blank = No) */
+.coached-yes { display:inline-block; padding:3px 9px; border-radius:4px; font-size:11px; font-weight:600; background:#f0fdf4; color:var(--unfounded); border:1px solid #bbf7d0; }
+.coached-no  { display:inline-block; padding:3px 9px; border-radius:4px; font-size:11px; font-weight:600; background:#eef0f5; color:#9aa0bb; border:1px solid #dde1ec; }
 
 .kpi-label {
   font-size: 10px; font-weight: 700;
@@ -922,6 +926,40 @@ tbody tr:hover td { background: #f7f8fc; }
       </div>
     </div>
 
+    <!-- MANAGER TABLE (mirrors Agent Summary, plus Coached and Coached %) -->
+    <div class="table-card">
+      <div class="table-toolbar">
+        <div class="section-label">Manager Summary</div>
+        <span class="section-count" id="mgrCount">—</span>
+        <input class="table-search" type="text" id="mgrSearch" placeholder="Search manager…">
+        <div class="export-btns">
+          <button class="export-btn" onclick="exportManagerCSV()">↓ CSV</button>
+          <button class="export-btn gold" onclick="exportManagerPDF()">↓ PDF</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="mgrTable">
+          <thead>
+            <tr>
+              <th onclick="sortMgr('manager')">Manager <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('total')" class="sorted">Total <span class="sort-icon">↓</span></th>
+              <th onclick="sortMgr('founded')">Founded <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('partial')">Partial <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('unfounded')">Unfounded <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('coaching')">Coaching <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('egregious')">Egregious <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('rate')">Founded + Partial Rate <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('coached')">Coached <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('coachedPct')">Coached % <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('submissions')">Submissions <span class="sort-icon">↕</span></th>
+              <th onclick="sortMgr('pct')">Complaint % <span class="sort-icon">↕</span></th>
+            </tr>
+          </thead>
+          <tbody id="mgrTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- AGENT TABLE -->
     <div class="table-card">
       <div class="table-toolbar">
@@ -984,6 +1022,7 @@ tbody tr:hover td { background: #f7f8fc; }
               <th>Carrier</th>
               <th>Determination</th>
               <th>Severity</th>
+              <th>Coached</th>
               <th>Source</th>
               <th>Allegation Topic</th>
               <th>Summary</th>
@@ -1062,6 +1101,7 @@ function csvToRecords(text) {
   return rows.slice(1).map(row => {
     const raw = {};
     headers.forEach((h, i) => { raw[h.trim()] = (row[i] || '').trim(); });
+    raw.__colX = (row[23] || '').trim(); // column X, Coached (Y/N)
     return normalizeRecord(raw);
   });
 }
@@ -1080,6 +1120,7 @@ function normalizeRecord(r) {
     'Allegation Topic':         r['Allegation Topic']        || '',
     'Determination':            r['Determination']           || '',
     'Severity':                 r['Severity']                || '',
+    'Coached':                  r['Coached (Y/N)'] ?? r['Coached'] ?? r.__colX ?? '',
     'AOIs':                     r['AOIs']                    || '',
     'Summary Link':             r['Summary Link']            || '',
     'AMS Link':                 r['AMS Link']                || '',
@@ -1097,13 +1138,15 @@ function showLoading() {
   document.getElementById('kpiPartial').textContent = '…';
   document.getElementById('kpiUnfounded').textContent = '…';
   document.getElementById('kpiCoaching').textContent = '…';
-  document.getElementById('agentTbody').innerHTML = '<tr><td colspan="8" class="empty">Loading data…</td></tr>';
-  document.getElementById('detailTbody').innerHTML = '<tr><td colspan="10" class="empty">Loading data…</td></tr>';
+  document.getElementById('mgrTbody').innerHTML = '<tr><td colspan="12" class="empty">Loading data…</td></tr>';
+  document.getElementById('agentTbody').innerHTML = '<tr><td colspan="11" class="empty">Loading data…</td></tr>';
+  document.getElementById('detailTbody').innerHTML = '<tr><td colspan="11" class="empty">Loading data…</td></tr>';
 }
 
 function showError(msg) {
-  document.getElementById('agentTbody').innerHTML = `<tr><td colspan="8" class="empty">${msg}</td></tr>`;
-  document.getElementById('detailTbody').innerHTML = `<tr><td colspan="10" class="empty">${msg}</td></tr>`;
+  document.getElementById('mgrTbody').innerHTML = `<tr><td colspan="12" class="empty">${msg}</td></tr>`;
+  document.getElementById('agentTbody').innerHTML = `<tr><td colspan="11" class="empty">${msg}</td></tr>`;
+  document.getElementById('detailTbody').innerHTML = `<tr><td colspan="11" class="empty">${msg}</td></tr>`;
 }
 
 // ---- FETCH DATA ----
@@ -1137,6 +1180,7 @@ async function loadData() {
 let filtered=[...RAW];
 let filteredSubmissions = null;
 let agentSortKey='total',agentSortDir=-1;
+let mgrSortKey='total',mgrSortDir=-1;
 let detailPage=1,detailDetFilter='';
 const PAGE_SIZE=15;
 const TODAY=new Date();
@@ -1173,6 +1217,9 @@ function sevBadge(v){
   if(s==='Egregious')    return '<span class="sev sev-egreg">Egregious</span>';
   return '<span class="sev sev-none">Not rated</span>';
 }
+// Coached comes from sheet column X. The sheet holds "Yes", "Y" or blank; blank (or anything not Y/Yes) is No.
+function isCoached(r){return /^y(es)?$/i.test(String(r.Coached||'').trim());}
+function coachedBadge(r){return isCoached(r)?'<span class="coached-yes">Yes</span>':'<span class="coached-no">No</span>';}
 function detClass(d){
   if(!d)return'';const l=d.toLowerCase();
   if(l==='founded')return'badge-f';
@@ -1343,7 +1390,7 @@ function resetFilters(){
   applyFilters();
 }
 
-function renderAll(){renderKPIs();renderCharts();renderAgentTable();renderDetailTable();}
+function renderAll(){renderKPIs();renderCharts();renderManagerTable();renderAgentTable();renderDetailTable();}
 
 function renderKPIs(){
   const total=filtered.length;
@@ -1480,6 +1527,81 @@ function renderAgentTable(){
 }
 document.getElementById('agentSearch').addEventListener('input',renderAgentTable);
 
+// ---- MANAGER SUMMARY ----
+// Same counting rules as getAgentStats, grouped by Manager. Submissions use the
+// Manager column of the submissions sheet, which is exactly what the Manager
+// filter uses, so a manager's row equals the report filtered to that manager.
+function getManagerStats(){
+  const map={};
+  filtered.forEach(r=>{
+    const k=r.Manager||'';
+    if(!map[k])map[k]={manager:k||'(No manager)',key:k,total:0,founded:0,partial:0,unfounded:0,coaching:0,egregious:0,coached:0};
+    const m=map[k];
+    m.total++;
+    const d=r.Determination;
+    if(d==='Founded')m.founded++;
+    else if(d==='Partially Founded'||d==='Partial')m.partial++;
+    else if(d==='Unfounded')m.unfounded++;
+    else if(d==='Unfounded, coaching opportunities present')m.coaching++;
+    if(String(r.Severity||'').trim()==='Egregious')m.egregious++;
+    if(isCoached(r))m.coached++;
+  });
+  const stats=Object.values(map);
+  stats.forEach(s=>{
+    s.rate=s.total?(s.founded+s.partial)/s.total:0;
+    s.coachedPct=s.total?s.coached/s.total*100:0;
+    if(filteredSubmissions){
+      s.submissions=s.key?filteredSubmissions.filter(sub=>sub.Manager===s.key).length:null;
+      s.pct=s.submissions?(s.total/s.submissions*100):null;
+    }else{s.submissions=null;s.pct=null;}
+  });
+  return stats;
+}
+function getManagerTableData(){
+  const search=document.getElementById('mgrSearch').value.toLowerCase();
+  const stats=getManagerStats().filter(s=>!search||s.manager.toLowerCase().includes(search));
+  stats.sort((a,b)=>{
+    const va=a[mgrSortKey],vb=b[mgrSortKey];
+    if(typeof va==='string')return va.localeCompare(vb)*mgrSortDir;
+    return((va??-1)-(vb??-1))*mgrSortDir;
+  });
+  return stats;
+}
+function sortMgr(key){if(mgrSortKey===key)mgrSortDir*=-1;else{mgrSortKey=key;mgrSortDir=-1;}renderManagerTable();}
+function renderManagerTable(){
+  const stats=getManagerTableData();
+  const maxT=Math.max(...stats.map(s=>s.total),1);
+  document.getElementById('mgrCount').textContent=stats.length+' managers';
+  const keys=['manager','total','founded','partial','unfounded','coaching','egregious','rate','coached','coachedPct','submissions','pct'];
+  document.querySelectorAll('#mgrTable th').forEach((th,i)=>{
+    th.classList.toggle('sorted',keys[i]===mgrSortKey);
+    th.querySelector('.sort-icon').textContent=keys[i]===mgrSortKey?(mgrSortDir>0?'↑':'↓'):'↕';
+  });
+  const tbody=document.getElementById('mgrTbody');
+  if(!stats.length){tbody.innerHTML='<tr><td colspan="12" class="empty">No data for selected filters</td></tr>';return;}
+  tbody.innerHTML=stats.map(s=>{
+    const rate=Math.round(s.rate*100);
+    const rc=rate>=50?'rate-high':rate>=20?'rate-mid':'rate-low';
+    const subsDisplay=(s.submissions===null||s.submissions===undefined)?'—':s.submissions;
+    const pctDisplay=(s.pct===null||s.pct===undefined)?'—':s.pct.toFixed(1)+'%';
+    return`<tr>
+      <td><div class="agent-name">${s.manager}</div></td>
+      <td class="num-center">${s.total}<div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${Math.round(s.total/maxT*100)}%"></div></div></td>
+      <td class="num-center" style="color:var(--founded)">${s.founded}</td>
+      <td class="num-center" style="color:var(--partial)">${s.partial}</td>
+      <td class="num-center" style="color:var(--unfounded)">${s.unfounded}</td>
+      <td class="num-center" style="color:var(--coaching)">${s.coaching}</td>
+      <td class="num-center">${s.egregious?`<span class="eg-count">${s.egregious}</span>`:'<span class="eg-zero">0</span>'}</td>
+      <td><span class="${rc} mono">${rate}%</span></td>
+      <td class="num-center" style="color:var(--unfounded)">${s.coached}</td>
+      <td class="num-center">${Math.round(s.coachedPct)}%</td>
+      <td class="num-center">${subsDisplay}</td>
+      <td class="num-center">${pctDisplay}</td>
+    </tr>`;
+  }).join('');
+}
+document.getElementById('mgrSearch').addEventListener('input',renderManagerTable);
+
 function qfFilter(v){
   detailDetFilter=v;detailPage=1;
   document.querySelectorAll('.qf-btn').forEach(b=>{
@@ -1501,7 +1623,7 @@ function renderDetailTable(){
   if(detailPage>pages)detailPage=pages;
   const slice=data.slice((detailPage-1)*PAGE_SIZE,detailPage*PAGE_SIZE);
   const tbody=document.getElementById('detailTbody');
-  if(!slice.length){tbody.innerHTML='<tr><td colspan="10" class="empty">No complaints match current filters</td></tr>';}
+  if(!slice.length){tbody.innerHTML='<tr><td colspan="11" class="empty">No complaints match current filters</td></tr>';}
   else{
     tbody.innerHTML=slice.map(r=>{
       const topics=parseTopics(r['Allegation Topic']).join(', ')||'—';
@@ -1517,6 +1639,7 @@ function renderDetailTable(){
         <td style="font-size:12px">${r['Name of Carrier Enrolled']||'—'}</td>
         <td><span class="badge ${detClass(r.Determination)}">${detShort(r.Determination)}</span></td>
         <td>${sevBadge(r.Severity)}</td>
+        <td>${coachedBadge(r)}</td>
         <td style="font-size:12px;color:var(--muted)">${r['Complaint Source']||'—'}</td>
         <td><div class="text-trunc" title="${topics}">${topics}</div></td>
         <td>${slCell}</td>
@@ -1654,6 +1777,23 @@ function exportAgentPDF() {
   printTable('Agent Summary', headers, rows);
 }
 
+// ---- MANAGER SUMMARY EXPORTS ----
+function managerExportRows(){
+  return getManagerTableData().map(s => [
+    s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
+    Math.round(s.rate*100)+'%', s.coached, Math.round(s.coachedPct)+'%',
+    s.submissions ?? '', s.pct != null ? s.pct.toFixed(1)+'%' : ''
+  ]);
+}
+function exportManagerCSV() {
+  const headers = ['Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Egregious','Founded + Partial Rate','Coached','Coached %','Total Submissions','Complaint %'];
+  downloadCSV('policypoint-manager-summary.csv', [headers, ...managerExportRows()]);
+}
+function exportManagerPDF() {
+  const headers = ['Manager','Total','Founded','Partial','Unfounded','Coaching','Egregious','F+P Rate','Coached','Coached %','Submissions','Complaint %'];
+  printTable('Manager Summary', headers, managerExportRows());
+}
+
 // ---- COMPLAINT DETAIL EXPORTS ----
 function getDetailExportData() {
   const search = document.getElementById('detailSearch').value.toLowerCase();
@@ -1669,10 +1809,10 @@ function getDetailExportData() {
 
 function exportDetailCSV() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Severity','Source','Allegation Topic','AOIs','Summary Link'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Severity','Coached','Source','Allegation Topic','AOIs','Summary Link'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
-    r['Name of Carrier Enrolled'], r.Determination, r.Severity || '', r['Complaint Source'],
+    r['Name of Carrier Enrolled'], r.Determination, r.Severity || '', isCoached(r) ? 'Yes' : 'No', r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join('; '),
     parseTopics(r['AOIs']).join('; '),
     r['Summary Link']
@@ -1682,11 +1822,12 @@ function exportDetailCSV() {
 
 function exportDetailPDF() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Severity','Source','Allegation Topic'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Severity','Coached','Source','Allegation Topic'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
     r['Name of Carrier Enrolled'], detShort(r.Determination),
     r.Severity || '\u2014',
+    isCoached(r) ? 'Yes' : 'No',
     r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join(', ')
   ]);
