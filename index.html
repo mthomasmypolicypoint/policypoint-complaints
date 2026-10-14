@@ -321,6 +321,10 @@ body {
   color: var(--muted); margin-bottom: 5px;
 }
 .filter-group { margin-bottom: 12px; }
+.align-seg { display: flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 2px; }
+.align-seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-family: 'Inter', sans-serif; padding: 6px 4px; border-radius: 4px; cursor: pointer; }
+.align-seg button.active { background: var(--navy); color: #fff; font-weight: 600; }
+.align-hint { font-size: 10.5px; color: var(--muted); margin-top: 6px; line-height: 1.35; }
 .filter-group:last-child { margin-bottom: 0; }
 
 .filter-group select,
@@ -787,6 +791,14 @@ tbody tr:hover td { background: #f7f8fc; }
     <div class="sidebar-section">
       <div class="sidebar-label">Filters</div>
       <div class="filter-group">
+        <div class="filter-label">Manager Alignment</div>
+        <div class="align-seg" id="alignSeg" role="group" aria-label="Manager alignment">
+          <button type="button" data-align="current" class="active">Current</button>
+          <button type="button" data-align="historical">Historical</button>
+        </div>
+        <div class="align-hint" id="alignHint"></div>
+      </div>
+      <div class="filter-group">
         <div class="filter-label">Manager</div>
         <select id="managerSel"><option value="">All Managers</option></select>
       </div>
@@ -1044,6 +1056,72 @@ let RAW = [];
 const SUBMISSIONS_URL = 'https://docs.google.com/spreadsheets/d/1LlxjOsN25cpjlOX5vfa1o_qSh6_XqzB-ZvRzxFXADdE/gviz/tq?tqx=out:csv&gid=1426768133';
 let SUBMISSIONS_RAW = [];
 
+// ---- MANAGER ALIGNMENT ----
+// Current    = every complaint and submission goes to the agent's manager on the
+//              live PolicyPoint roster. Agents missing from it show "Not on roster".
+// Historical = complaint rows keep the manager recorded on the row (sheet column C,
+//              Manager Name). Submissions go to the agent's manager on their most
+//              recent complaint row; agents with no complaint fall back to the
+//              roster, then to the submissions sheet's own Manager column,
+//              else "Unassigned".
+const ROSTER_URL = 'https://docs.google.com/spreadsheets/d/1JhD022WkYR1HdRwjrSHxYFPNzUAiZKy3gvnz9dON29U/gviz/tq?tqx=out:csv&gid=1374190330';
+const NOT_ON_ROSTER = 'Not on roster';
+let ALIGN_MODE = 'current';
+let ROSTER_BY_KEY = {}, ROSTER_LIST = [], ROSTER_MEMO = {};
+function alNorm(s){return String(s||'').toLowerCase().replace(/\([^)]*\)/g,' ').replace(/[^a-z\s]/g,' ').replace(/\b(jr|sr|ii|iii|iv)\b/g,' ').replace(/\s+/g,' ').trim();}
+function alKey(s){return alNorm(normalizeAgentName(s)).split(' ').filter(Boolean).sort().join(' ');}
+function alLev(a,b){const m=a.length,n=b.length;if(!m)return n;if(!n)return m;let p=Array.from({length:n+1},(_,i)=>i);for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c;}return p[n];}
+function parseRosterCSV(text){
+  ROSTER_BY_KEY={};ROSTER_LIST=[];ROSTER_MEMO={};
+  const rows=parseCSV(text);if(rows.length<2)return;
+  const head=rows[0].map(h=>String(h||'').trim().toLowerCase());
+  const iA=head.indexOf('agent'),iM=head.indexOf('manager');
+  if(iA<0||iM<0){console.warn('Roster: Agent/Manager columns not found',rows[0]);return;}
+  rows.slice(1).forEach(r=>{
+    const a=(r[iA]||'').trim(),m=(r[iM]||'').trim();if(!a||!m)return;
+    const k=alKey(a);if(k&&!ROSTER_BY_KEY[k])ROSTER_BY_KEY[k]=m;
+    ROSTER_LIST.push({norm:alNorm(normalizeAgentName(a)),manager:m});
+  });
+}
+// Exact name match first (word order and case ignored), then a small typo tolerance.
+function rosterManager(agent){
+  if(!agent)return '';
+  if(agent in ROSTER_MEMO)return ROSTER_MEMO[agent];
+  let m=ROSTER_BY_KEY[alKey(agent)]||'';
+  if(!m){
+    const na=alNorm(normalizeAgentName(agent));let best='',bd=Infinity;
+    ROSTER_LIST.forEach(e=>{const d=alLev(na,e.norm);if(d<bd){bd=d;best=e.manager;}});
+    if(na&&bd<=Math.max(1,Math.floor(na.length*0.15)))m=best;
+  }
+  return ROSTER_MEMO[agent]=m;
+}
+function applyAlignment(){
+  const current=ALIGN_MODE==='current';
+  const latest={};
+  RAW.forEach(r=>{
+    if(r._srcMgr===undefined)r._srcMgr=r.Manager;
+    const t=parseDate(r['Complaint Date'])||parseDate(r['Application Date'])||parseDate(r.Timestamp);
+    const k=alKey(r.Agent);if(!k||!r._srcMgr)return;
+    if(!latest[k]||(t&&(!latest[k].t||t>=latest[k].t)))latest[k]={m:r._srcMgr,t:t};
+  });
+  RAW.forEach(r=>{r.Manager=current?(rosterManager(r.Agent)||NOT_ON_ROSTER):r._srcMgr;});
+  SUBMISSIONS_RAW.forEach(r=>{
+    if(r._srcMgr===undefined)r._srcMgr=r.Manager;
+    if(current)r.Manager=rosterManager(r.Agent)||NOT_ON_ROSTER;
+    else{const l=latest[alKey(r.Agent)];r.Manager=(l&&l.m)||rosterManager(r.Agent)||r._srcMgr||'Unassigned';}
+  });
+  const hint=document.getElementById('alignHint');
+  if(hint)hint.textContent=current
+    ?"Managers from today's roster. An agent's full history follows their current manager."
+    :'Managers as recorded on each complaint (column C), at the time it was logged.';
+  document.querySelectorAll('#alignSeg button').forEach(b=>b.classList.toggle('active',b.dataset.align===ALIGN_MODE));
+}
+function setAlignment(mode){
+  ALIGN_MODE=mode==='historical'?'historical':'current';
+  const sel=document.getElementById('managerSel');if(sel)sel.value='';
+  applyAlignment();applyFilters();
+}
+
 function normalizeAgentName(name){
   if(!name) return '';
   name = String(name).trim();
@@ -1159,6 +1237,12 @@ async function loadData() {
     RAW = csvToRecords(text);
     if (RAW.length === 0) throw new Error('No data found');
     try {
+      const resR = await fetch(ROSTER_URL + '&t=' + Date.now());
+      if (resR.ok) parseRosterCSV(await resR.text());
+    } catch(eR) {
+      console.error('Roster load error:', eR);
+    }
+    try {
       const res2 = await fetch(SUBMISSIONS_URL + '&t=' + Date.now());
       if (res2.ok) {
         const text2 = await res2.text();
@@ -1169,6 +1253,7 @@ async function loadData() {
       SUBMISSIONS_RAW = [];
     }
     document.getElementById('refreshTime').textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    applyAlignment();
     applyFilters();
   } catch(e) {
     console.error('Load error:', e);
@@ -1322,6 +1407,7 @@ document.querySelectorAll('.preset-btn').forEach(btn=>{
     applyFilters();
   });
 });
+document.querySelectorAll('#alignSeg button').forEach(b=>b.addEventListener('click',()=>setAlignment(b.dataset.align)));
 ['dateFrom','dateTo','dateFieldSel','managerSel','agentSel','detSel','carrierSel'].forEach(id=>{
   document.getElementById(id).addEventListener('change',applyFilters);
 });
