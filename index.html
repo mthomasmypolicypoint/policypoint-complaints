@@ -1055,6 +1055,46 @@ const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT_RA1ZAz2BNK
 let RAW = [];
 const SUBMISSIONS_URL = 'https://docs.google.com/spreadsheets/d/1LlxjOsN25cpjlOX5vfa1o_qSh6_XqzB-ZvRzxFXADdE/gviz/tq?tqx=out:csv&gid=1426768133';
 let SUBMISSIONS_RAW = [];
+let SUBMISSIONS_SOURCE = '';
+// -- Apps Submitted from the 10 Day folder (Michelle, 2026-11-01) --
+// Source: "EH Policies.csv" on pp10day (the 10-day folder's EnrollHere export,
+// refreshed every morning), replacing the Apps Submitted Google Sheet, which had
+// stopped at mid-September submissions. The sheet is still read if pp10day
+// can't be reached, and the page says which source it used.
+// One app per EH Policies row, every status. Two quirks in that export are
+// corrected here:
+//  - Rows whose "Column1" holds an email are shifted one column left from there
+//    (the agent-name cell is missing). For those, the App Submit Date is in the
+//    "Created Date" column and the Effective Date in "Approved Date".
+//    (841 rows on 2026-11-01, mostly Sept/Oct POL_SUBMITTED.)
+//  - Rows with Owner First Name "0" carry the first name in "Owner Last Name"
+//    and the last name in "Column1". (1,046 rows.)
+// Agent = Owner First + Last Name (the EH policy owner is the writing agent),
+// returned as "Last, First" to match the old sheet. Checked 2026-11-01: July
+// 2026 per-agent counts equal the sheet's (Hollis 46, Nguyen 41, Vintimilla 38...).
+const EH_POLICIES_URL = 'https://pp10day.netlify.app/EH%20Policies.csv';
+function ehPoliciesToApps(matrix) {
+  const h = (matrix[0] || []).map(x => String(x == null ? '' : x).replace(/^﻿/, '').trim());
+  const ix = n => h.indexOf(n);
+  const iOF = ix('Owner First Name'), iOL = ix('Owner Last Name');
+  const iCr = ix('Created Date'), iSub = ix('Submitted Date'), iApp = ix('Approved Date');
+  const iEff = ix('Effective Date'), iCar = ix('Carrier');
+  if ([iOF, iOL, iCr, iSub, iApp, iEff, iCar].some(i => i < 0)) throw new Error('EH Policies.csv is missing an expected column');
+  const iC1 = iOL + 1;
+  const out = [];
+  for (let i = 1; i < matrix.length; i++) {
+    const r = matrix[i];
+    if (!r || !r.some(c => String(c || '').trim())) continue;
+    const g = k => String(r[k] == null ? '' : r[k]).trim();
+    const c1 = g(iC1), of = g(iOF), ol = g(iOL);
+    const shifted = c1.indexOf('@') !== -1;
+    const first = of === '0' ? ol : of;
+    const last = of === '0' ? c1 : ol;
+    const agent = (last && first) ? last + ', ' + first : (last || first);
+    out.push({ agent: agent, submitDate: g(shifted ? iCr : iSub), effDate: g(shifted ? iApp : iEff), carrier: g(iCar) });
+  }
+  return out;
+}
 
 // ---- MANAGER ALIGNMENT ----
 // Current    = every complaint and submission goes to the agent's manager on the
@@ -1133,8 +1173,14 @@ function normalizeAgentName(name){
   }
   return name;
 }
+// Carrier names differ between sources ("Aetna Inc." on complaints, "Aetna" in
+// EH Policies; "Devoted" vs "Devoted Health"), so compare letters/digits only,
+// without a trailing Inc/Corporation/LLC.
 function normalizeCarrierName(c){
-  return String(c||'').replace(/\s+/g,'').toLowerCase();
+  let s=String(c||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  s=s.replace(/(incorporated|inc|corporation|corp|llc)$/,'');
+  if(s==='devoted')s='devotedhealth';
+  return s;
 }
 function parseSubmissionsCSV(text){
   const rows = parseCSV(text);
@@ -1242,15 +1288,31 @@ async function loadData() {
     } catch(eR) {
       console.error('Roster load error:', eR);
     }
+    SUBMISSIONS_RAW = [];
+    SUBMISSIONS_SOURCE = '';
+    // Submissions: EH Policies from the 10 Day site first, the old sheet as fallback.
+    // EffDate is the real effective date; sheet rows have none, so for those the
+    // Effective Date filter still uses computeEffectiveDate(Date).
     try {
-      const res2 = await fetch(SUBMISSIONS_URL + '&t=' + Date.now());
-      if (res2.ok) {
-        const text2 = await res2.text();
-        SUBMISSIONS_RAW = parseSubmissionsCSV(text2);
+      const resE = await fetch(EH_POLICIES_URL, { cache: 'no-cache' });
+      if (!resE.ok) throw new Error('HTTP ' + resE.status);
+      SUBMISSIONS_RAW = ehPoliciesToApps(parseCSV(await resE.text()))
+        .filter(a => a.agent)
+        .map(a => ({ Agent: normalizeAgentName(a.agent), Date: a.submitDate, EffDate: a.effDate, Carrier: a.carrier, Manager: '' }));
+      SUBMISSIONS_SOURCE = '10 Day EH Policies';
+    } catch(eE) {
+      console.error('EH Policies (10 Day) load error, using the Apps Submitted sheet:', eE);
+      try {
+        const res2 = await fetch(SUBMISSIONS_URL + '&t=' + Date.now());
+        if (res2.ok) {
+          const text2 = await res2.text();
+          SUBMISSIONS_RAW = parseSubmissionsCSV(text2);
+          SUBMISSIONS_SOURCE = 'Apps Submitted sheet (fallback)';
+        }
+      } catch(e2) {
+        console.error('Submissions load error:', e2);
+        SUBMISSIONS_RAW = [];
       }
-    } catch(e2) {
-      console.error('Submissions load error:', e2);
-      SUBMISSIONS_RAW = [];
     }
     document.getElementById('refreshTime').textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     applyAlignment();
@@ -1447,7 +1509,7 @@ function applyFilters(){
     if (field === 'Application Date' || field === 'Effective Date') {
     filteredSubmissions = SUBMISSIONS_RAW.filter(r => {
       if (from || to) {
-        const dt = field === 'Effective Date' ? parseDate(computeEffectiveDate(r.Date)) : parseDate(r.Date);
+        const dt = field === 'Effective Date' ? parseDate(r.EffDate || computeEffectiveDate(r.Date)) : parseDate(r.Date);
         if (!dt) return false;
         if (from && dt < from) return false;
         if (to && dt > to) return false;
@@ -1514,7 +1576,7 @@ function renderKPIs(){
   const kSub = document.getElementById('kpiSubmissions');
   const kSubSub = document.getElementById('kpiSubmissionsSub');
   if (kSub) kSub.textContent = subsApplicable ? totalSubs : '—';
-  if (kSubSub) kSubSub.textContent = subsApplicable ? 'in selected period' : 'N/A for this date filter';
+  if (kSubSub) kSubSub.textContent = subsApplicable ? ('in selected period' + (SUBMISSIONS_SOURCE ? ' \u00b7 ' + SUBMISSIONS_SOURCE : '')) : 'N/A for this date filter';
   const complaintPct = (subsApplicable && totalSubs) ? (total/totalSubs*100) : null;
   const kPct = document.getElementById('kpiPct');
   const kPctSub = document.getElementById('kpiPctSub');
