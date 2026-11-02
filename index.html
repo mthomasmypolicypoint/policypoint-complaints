@@ -1114,6 +1114,11 @@ let ALIGN_MODE = 'current';
 let ROSTER_BY_KEY = {}, ROSTER_LIST = [], ROSTER_MEMO = {};
 function alNorm(s){return String(s||'').toLowerCase().replace(/\([^)]*\)/g,' ').replace(/[^a-z\s]/g,' ').replace(/\b(jr|sr|ii|iii|iv)\b/g,' ').replace(/\s+/g,' ').trim();}
 function alKey(s){return alNorm(normalizeAgentName(s)).split(' ').filter(Boolean).sort().join(' ');}
+// Agent key for joining complaints to submissions (2026-11-02): case-insensitive,
+// ignores punctuation, suffixes, word order and middle initials, so "Rene N. King"
+// (complaint sheet) matches "Rene King" (EH Policies) and "Christina nguyen"
+// matches "Christina Nguyen". Exact matching had left such agents at 0 submissions.
+function subKey(s){return alNorm(normalizeAgentName(s)).split(' ').filter(w=>w.length>1).sort().join(' ');}
 function alLev(a,b){const m=a.length,n=b.length;if(!m)return n;if(!n)return m;let p=Array.from({length:n+1},(_,i)=>i);for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c;}return p[n];}
 function parseRosterCSV(text){
   ROSTER_BY_KEY={};ROSTER_LIST=[];ROSTER_MEMO={};
@@ -1519,7 +1524,7 @@ function applyFilters(){
         if (to && dt > to) return false;
       }
       if (manager && r.Manager !== manager) return false;
-      if (agent && r.Agent !== agent) return false;
+      if (agent && subKey(r.Agent) !== subKey(agent)) return false;
       if (carrier && normalizeCarrierName(r.Carrier) !== normalizeCarrierName(carrier)) return false;
       return true;
     });
@@ -1630,7 +1635,7 @@ function getAgentStats(){
   const stats = Object.values(map);
   stats.forEach(s=>{
     if(filteredSubmissions){
-      s.submissions = filteredSubmissions.filter(sub=>sub.Agent===s.agent).length;
+      const sk=subKey(s.agent); s.submissions = filteredSubmissions.filter(sub=>subKey(sub.Agent)===sk).length;
       s.pct = s.submissions ? (s.total/s.submissions*100) : null;
     } else {
       s.submissions = null;
