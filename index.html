@@ -1062,7 +1062,7 @@ let SUBMISSIONS_SOURCE = '';
 // stopped at mid-September submissions. The sheet is still read if pp10day
 // can't be reached, and the page says which source it used.
 // One app per EH Policies row, every status. Two quirks in that export are
-// corrected here:
+// corrected here (only when the file has the "Column1" layout, see below):
 //  - Rows whose "Column1" holds an email are shifted one column left from there
 //    (the agent-name cell is missing). For those, the App Submit Date is in the
 //    "Created Date" column and the Effective Date in "Approved Date".
@@ -1080,16 +1080,20 @@ function ehPoliciesToApps(matrix) {
   const iCr = ix('Created Date'), iSub = ix('Submitted Date'), iApp = ix('Approved Date');
   const iEff = ix('Effective Date'), iCar = ix('Carrier');
   if ([iOF, iOL, iCr, iSub, iApp, iEff, iCar].some(i => i < 0)) throw new Error('EH Policies.csv is missing an expected column');
-  const iC1 = iOL + 1;
+  // The two quirks only exist in the hand-edited layout, which has an extra
+  // "Column1" right after Owner Last Name. The raw EnrollHere export (what Box
+  // "Daily Reporting" holds since 2026-11-02) has no Column1 and needs no fixing.
+  const iC1 = h[iOL + 1] === 'Column1' ? iOL + 1 : -1;
   const out = [];
   for (let i = 1; i < matrix.length; i++) {
     const r = matrix[i];
     if (!r || !r.some(c => String(c || '').trim())) continue;
     const g = k => String(r[k] == null ? '' : r[k]).trim();
-    const c1 = g(iC1), of = g(iOF), ol = g(iOL);
-    const shifted = c1.indexOf('@') !== -1;
-    const first = of === '0' ? ol : of;
-    const last = of === '0' ? c1 : ol;
+    const c1 = iC1 >= 0 ? g(iC1) : '', of = g(iOF), ol = g(iOL);
+    const shifted = iC1 >= 0 && c1.indexOf('@') !== -1;
+    const zero = iC1 >= 0 && of === '0';
+    const first = zero ? ol : of;
+    const last = zero ? c1 : ol;
     const agent = (last && first) ? last + ', ' + first : (last || first);
     out.push({ agent: agent, submitDate: g(shifted ? iCr : iSub), effDate: g(shifted ? iApp : iEff), carrier: g(iCar) });
   }
