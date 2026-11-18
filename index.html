@@ -97,9 +97,9 @@ function getAgentExportData() {
 
 function exportAgentCSV() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Egregious','Founded Rate'];
+  const headers = ['Agent','Manager','Total','Carrier Founded','Retraining','Agency Founded','Partially Founded','Unfounded','Coaching Opp.','Egregious','Founded Rate'];
   const rows = stats.map(s => [
-    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
+    s.agent, s.manager, s.total, s.carrierFounded, s.retraining, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
     s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
   ]);
   downloadCSV('policypoint-agent-summary.csv', [headers, ...rows]);
@@ -107,9 +107,9 @@ function exportAgentCSV() {
 
 function exportAgentPDF() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Egregious','Founded Rate'];
+  const headers = ['Agent','Manager','Total','Carrier Founded','Retraining','Agency Founded','Partial','Unfounded','Coaching','Egregious','Founded Rate'];
   const rows = stats.map(s => [
-    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
+    s.agent, s.manager, s.total, s.carrierFounded, s.retraining, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
     s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%'
   ]);
   printTable('Agent Summary', headers, rows);
@@ -130,10 +130,10 @@ function getDetailExportData() {
 
 function exportDetailCSV() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Severity','Coached','Source','Allegation Topic','AOIs','Summary Link'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Carrier Determination','Severity','Coached','Source','Allegation Topic','AOIs','Summary Link'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
-    r['Name of Carrier Enrolled'], r.Determination, r.Severity || '', isCoached(r) ? 'Yes' : 'No', r['Complaint Source'],
+    r['Name of Carrier Enrolled'], r.Determination, r['Carrier Determination'] || '', r.Severity || '', isCoached(r) ? 'Yes' : 'No', r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join('; '),
     parseTopics(r['AOIs']).join('; '),
     r['Summary Link']
@@ -143,10 +143,11 @@ function exportDetailCSV() {
 
 function exportDetailPDF() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Severity','Coached','Source','Allegation Topic'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Carrier Determination','Severity','Coached','Source','Allegation Topic'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
     r['Name of Carrier Enrolled'], detShort(r.Determination),
+    r['Carrier Determination'] || '\u2014',
     r.Severity || '\u2014',
     isCoached(r) ? 'Yes' : 'No',
     r['Complaint Source'],
@@ -990,7 +991,9 @@ tbody tr:hover td { background: #f7f8fc; }
               <th onclick="sortAgent('agent')">Agent <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('manager')">Manager <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('total')" class="sorted">Total <span class="sort-icon">↓</span></th>
-              <th onclick="sortAgent('founded')">Founded <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('carrierFounded')">Carrier Founded <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('retraining')">Retraining <span class="sort-icon">↕</span></th>
+              <th onclick="sortAgent('founded')">Agency Founded <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('partial')">Partial <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('unfounded')">Unfounded <span class="sort-icon">↕</span></th>
               <th onclick="sortAgent('coaching')">Coaching <span class="sort-icon">↕</span></th>
@@ -1033,6 +1036,7 @@ tbody tr:hover td { background: #f7f8fc; }
               <th>Reviewed Date</th>
               <th>Carrier</th>
               <th>Determination</th>
+              <th>Carrier Determination</th>
               <th>Severity</th>
               <th>Coached</th>
               <th>Source</th>
@@ -1235,6 +1239,7 @@ function csvToRecords(text) {
     const raw = {};
     headers.forEach((h, i) => { raw[h.trim()] = (row[i] || '').trim(); });
     raw.__colX = (row[23] || '').trim(); // column X, Coached (Y/N)
+    raw.__colAA = (row[26] || '').trim(); // column AA, Final Carrier Determination
     return normalizeRecord(raw);
   });
 }
@@ -1254,6 +1259,7 @@ function normalizeRecord(r) {
     'Determination':            r['Determination']           || '',
     'Severity':                 r['Severity']                || '',
     'Coached':                  r['Coached (Y/N)'] ?? r['Coached'] ?? r.__colX ?? '',
+    'Carrier Determination':    r['Final Carrier Determination'] || r['Carrier Determination'] || r.__colAA || '',
     'AOIs':                     r['AOIs']                    || '',
     'Summary Link':             r['Summary Link']            || '',
     'AMS Link':                 r['AMS Link']                || '',
@@ -1374,6 +1380,14 @@ function sevBadge(v){
   return '<span class="sev sev-none">Not rated</span>';
 }
 // Coached comes from sheet column X. The sheet holds "Yes", "Y" or blank; blank (or anything not Y/Yes) is No.
+// Carrier Determination comes from sheet column AA (Final Carrier Determination), free text.
+// Carrier Founded = the value starts with "Founded" or "Partially Founded" (any case): Founded,
+// Founded with training, Founded with additional findings, Founded against agency..., Partially Founded.
+// Retraining = the value mentions "Retraining" or "Agent Education" (e.g. Self-guided Retraining).
+// "Unfounded...", "No Additional Feedback" and blank count toward neither.
+function escHtmlCD(v){return String(v||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function isCarrierFounded(r){return /^\s*(partially\s+)?founded/i.test(String(r['Carrier Determination']||''));}
+function isCarrierRetraining(r){return /retrain|agent\s+education/i.test(String(r['Carrier Determination']||''));}
 function isCoached(r){return /^y(es)?$/i.test(String(r.Coached||'').trim());}
 function coachedBadge(r){return isCoached(r)?'<span class="coached-yes">Yes</span>':'<span class="coached-no">No</span>';}
 function detClass(d){
@@ -1623,7 +1637,7 @@ function getAgentStats(){
   const map={};
   filtered.forEach(r=>{
     const k=r.Agent+'|'+r.Manager;
-    if(!map[k])map[k]={agent:r.Agent,manager:r.Manager,total:0,founded:0,partial:0,unfounded:0,coaching:0,egregious:0};
+    if(!map[k])map[k]={agent:r.Agent,manager:r.Manager,total:0,carrierFounded:0,retraining:0,founded:0,partial:0,unfounded:0,coaching:0,egregious:0};
     map[k].total++;
     const d=r.Determination;
     if(d==='Founded')map[k].founded++;
@@ -1631,6 +1645,8 @@ function getAgentStats(){
     else if(d==='Unfounded')map[k].unfounded++;
     else if(d==='Unfounded, coaching opportunities present')map[k].coaching++;
     if(String(r.Severity||'').trim()==='Egregious')map[k].egregious++;
+    if(isCarrierFounded(r))map[k].carrierFounded++;
+    if(isCarrierRetraining(r))map[k].retraining++;
   });
   const stats = Object.values(map);
   stats.forEach(s=>{
@@ -1656,12 +1672,12 @@ function renderAgentTable(){
   const maxT=Math.max(...stats.map(s=>s.total),1);
   document.getElementById('agentCount').textContent=stats.length+' agents';
   document.querySelectorAll('#agentTable th').forEach((th,i)=>{
-    const keys=['agent','manager','total','founded','partial','unfounded','coaching','egregious','rate','submissions','pct'];
+    const keys=['agent','manager','total','carrierFounded','retraining','founded','partial','unfounded','coaching','egregious','rate','submissions','pct'];
     th.classList.toggle('sorted',keys[i]===agentSortKey);
     th.querySelector('.sort-icon').textContent=keys[i]===agentSortKey?(agentSortDir>0?'↑':'↓'):'↕';
   });
   const tbody=document.getElementById('agentTbody');
-  if(!stats.length){tbody.innerHTML='<tr><td colspan="11" class="empty">No data for selected filters</td></tr>';return;}
+  if(!stats.length){tbody.innerHTML='<tr><td colspan="13" class="empty">No data for selected filters</td></tr>';return;}
   tbody.innerHTML=stats.map(s=>{
     const rate=s.total?Math.round((s.founded+s.partial)/s.total*100):0;
     const rc=rate>=50?'rate-high':rate>=20?'rate-mid':'rate-low';
@@ -1671,6 +1687,8 @@ function renderAgentTable(){
       <td><div class="agent-name">${s.agent}</div></td>
       <td><div class="mgr-name">${s.manager}</div></td>
       <td class="num-center">${s.total}<div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${Math.round(s.total/maxT*100)}%"></div></div></td>
+      <td class="num-center" style="color:var(--founded)">${s.carrierFounded}</td>
+      <td class="num-center" style="color:var(--partial)">${s.retraining}</td>
       <td class="num-center" style="color:var(--founded)">${s.founded}</td>
       <td class="num-center" style="color:var(--partial)">${s.partial}</td>
       <td class="num-center" style="color:var(--unfounded)">${s.unfounded}</td>
@@ -1780,7 +1798,7 @@ function renderDetailTable(){
   if(detailPage>pages)detailPage=pages;
   const slice=data.slice((detailPage-1)*PAGE_SIZE,detailPage*PAGE_SIZE);
   const tbody=document.getElementById('detailTbody');
-  if(!slice.length){tbody.innerHTML='<tr><td colspan="11" class="empty">No complaints match current filters</td></tr>';}
+  if(!slice.length){tbody.innerHTML='<tr><td colspan="12" class="empty">No complaints match current filters</td></tr>';}
   else{
     tbody.innerHTML=slice.map(r=>{
       const topics=parseTopics(r['Allegation Topic']).join(', ')||'—';
@@ -1795,6 +1813,7 @@ function renderDetailTable(){
         <td class="mono" style="font-size:12px">${fmtDate(r['Reviewed Date'])}</td>
         <td style="font-size:12px">${r['Name of Carrier Enrolled']||'—'}</td>
         <td><span class="badge ${detClass(r.Determination)}">${detShort(r.Determination)}</span></td>
+        <td style="font-size:12px">${escHtmlCD(r['Carrier Determination'])||'—'}</td>
         <td>${sevBadge(r.Severity)}</td>
         <td>${coachedBadge(r)}</td>
         <td style="font-size:12px;color:var(--muted)">${r['Complaint Source']||'—'}</td>
@@ -1912,9 +1931,9 @@ function getAgentExportData() {
 
 function exportAgentCSV() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partially Founded','Unfounded','Coaching Opp.','Egregious','Founded Rate','Total Submissions','Complaint %'];
+  const headers = ['Agent','Manager','Total','Carrier Founded','Retraining','Agency Founded','Partially Founded','Unfounded','Coaching Opp.','Egregious','Founded Rate','Total Submissions','Complaint %'];
   const rows = stats.map(s => [
-    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
+    s.agent, s.manager, s.total, s.carrierFounded, s.retraining, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
     s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%',
     (s.submissions===null||s.submissions===undefined) ? '' : s.submissions,
     (s.pct===null||s.pct===undefined) ? '' : s.pct.toFixed(1)+'%'
@@ -1924,9 +1943,9 @@ function exportAgentCSV() {
 
 function exportAgentPDF() {
   const stats = getAgentExportData();
-  const headers = ['Agent','Manager','Total','Founded','Partial','Unfounded','Coaching','Egregious','Founded Rate','Submissions','Complaint %'];
+  const headers = ['Agent','Manager','Total','Carrier Founded','Retraining','Agency Founded','Partial','Unfounded','Coaching','Egregious','Founded Rate','Submissions','Complaint %'];
   const rows = stats.map(s => [
-    s.agent, s.manager, s.total, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
+    s.agent, s.manager, s.total, s.carrierFounded, s.retraining, s.founded, s.partial, s.unfounded, s.coaching, s.egregious,
     s.total ? Math.round((s.founded+s.partial)/s.total*100)+'%' : '0%',
     (s.submissions===null||s.submissions===undefined) ? '—' : s.submissions,
     (s.pct===null||s.pct===undefined) ? '—' : s.pct.toFixed(1)+'%'
@@ -1966,10 +1985,10 @@ function getDetailExportData() {
 
 function exportDetailCSV() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Severity','Coached','Source','Allegation Topic','AOIs','Summary Link'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed Date','Carrier','Determination','Carrier Determination','Severity','Coached','Source','Allegation Topic','AOIs','Summary Link'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
-    r['Name of Carrier Enrolled'], r.Determination, r.Severity || '', isCoached(r) ? 'Yes' : 'No', r['Complaint Source'],
+    r['Name of Carrier Enrolled'], r.Determination, r['Carrier Determination'] || '', r.Severity || '', isCoached(r) ? 'Yes' : 'No', r['Complaint Source'],
     parseTopics(r['Allegation Topic']).join('; '),
     parseTopics(r['AOIs']).join('; '),
     r['Summary Link']
@@ -1979,10 +1998,11 @@ function exportDetailCSV() {
 
 function exportDetailPDF() {
   const data = getDetailExportData();
-  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Severity','Coached','Source','Allegation Topic'];
+  const headers = ['Agent','Manager','Complaint Date','Reviewed','Carrier','Determination','Carrier Determination','Severity','Coached','Source','Allegation Topic'];
   const rows = data.map(r => [
     r.Agent, r.Manager, r['Complaint Date'], r['Reviewed Date'],
     r['Name of Carrier Enrolled'], detShort(r.Determination),
+    r['Carrier Determination'] || '\u2014',
     r.Severity || '\u2014',
     isCoached(r) ? 'Yes' : 'No',
     r['Complaint Source'],
